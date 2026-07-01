@@ -5,7 +5,6 @@ workflows:
   android-build:
     name: Build Android APK
     max_build_duration: 60
-    instance_type: linux # Standard Linux VM compatible with the free/standard billing plan
     environment:
       node: latest
       java: 17
