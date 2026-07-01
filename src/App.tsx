@@ -132,7 +132,17 @@ export default function App() {
       // Compute WebSocket URL based on current host
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const host = window.location.host;
-      const wsUrl = `${protocol}//${host}`;
+      
+      // If we are running in Capacitor (localhost or file://) or during local dev, use the deployed backend
+      const isLocalOrMobile = 
+        host.includes("localhost") || 
+        host.includes("127.0.0.1") || 
+        window.location.protocol === "file:" || 
+        !host.includes(".");
+        
+      const wsUrl = isLocalOrMobile
+        ? "wss://ais-pre-snofsbk7ydeyygnwf4dboc-526192577065.europe-west2.run.app"
+        : `${protocol}//${host}`;
 
       socket = new WebSocket(wsUrl);
 

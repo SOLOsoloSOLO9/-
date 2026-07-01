@@ -7,8 +7,6 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     iosScheme: 'https',
-    // Connects perfectly to the backend server with active sync, chat, rooms, and game loops
-    url: 'https://ais-pre-snofsbk7ydeyygnwf4dboc-526192577065.europe-west2.run.app',
     cleartext: true
   },
   plugins: {
