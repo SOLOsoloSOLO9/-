@@ -122,41 +122,22 @@ export default function App() {
 
   // Connect to server
   useEffect(() => {
-    let socket: WebSocket;
+    let socket: WebSocket | null = null;
     let reconnectTimeout: NodeJS.Timeout;
     let heartbeatInterval: NodeJS.Timeout;
 
-    const connect = () => {
-      setConnStatus("connecting");
-      
-      // Compute WebSocket URL based on current host
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host;
-      
-      // If we are running in Capacitor (localhost or file://) or during local dev, use the deployed backend
-      const isLocalOrMobile = 
-        host.includes("localhost") || 
-        host.includes("127.0.0.1") || 
-        window.location.protocol === "file:" || 
-        !host.includes(".");
-        
-      const wsUrl = isLocalOrMobile
-        ? "wss://ais-pre-snofsbk7ydeyygnwf4dboc-526192577065.europe-west2.run.app"
-        : `${protocol}//${host}`;
+    const setupSocket = (activeSocket: WebSocket) => {
+      socket = activeSocket;
+      setConnStatus("connected");
 
-      socket = new WebSocket(wsUrl);
+      // Start Heartbeat to keep connection active
+      heartbeatInterval = setInterval(() => {
+        if (activeSocket.readyState === WebSocket.OPEN) {
+          activeSocket.send(JSON.stringify({ type: "heartbeat" }));
+        }
+      }, 30000);
 
-      socket.onopen = () => {
-        setConnStatus("connected");
-        // Start Heartbeat to keep connection active
-        heartbeatInterval = setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: "heartbeat" }));
-          }
-        }, 30000);
-      };
-
-      socket.onmessage = (event) => {
+      activeSocket.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
           const { type, data } = parsed;
@@ -194,7 +175,7 @@ export default function App() {
         }
       };
 
-      socket.onclose = () => {
+      activeSocket.onclose = () => {
         setConnStatus("disconnected");
         clearInterval(heartbeatInterval);
         // Attempt reconnect after 3s if not fully destroyed
@@ -203,17 +184,100 @@ export default function App() {
         }, 3000);
       };
 
-      socket.onerror = () => {
+      activeSocket.onerror = () => {
         setConnStatus("disconnected");
       };
 
-      setWs(socket);
+      setWs(activeSocket);
+    };
+
+    const connect = () => {
+      setConnStatus("connecting");
+      
+      // Compute WebSocket URL based on current host
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      
+      // If we are running in Capacitor (localhost or file://) or during local dev, use the deployed backend
+      const isLocalOrMobile = 
+        host.includes("localhost") || 
+        host.includes("127.0.0.1") || 
+        window.location.protocol === "file:" || 
+        !host.includes(".");
+
+      if (!isLocalOrMobile) {
+        // Direct connection when loaded from the web server itself
+        const wsUrl = `${protocol}//${host}`;
+        const wsSingle = new WebSocket(wsUrl);
+        setupSocket(wsSingle);
+      } else {
+        // We are on a mobile device or local simulator
+        // Let's try both production and development backend environments simultaneously to find the active one!
+        const preUrl = "wss://ais-pre-snofsbk7ydeyygnwf4dboc-526192577065.europe-west2.run.app";
+        const devUrl = "wss://ais-dev-snofsbk7ydeyygnwf4dboc-526192577065.europe-west2.run.app";
+        
+        let resolved = false;
+        
+        const wsPre = new WebSocket(preUrl);
+        const wsDev = new WebSocket(devUrl);
+        
+        const cleanupTempSockets = (loser: WebSocket) => {
+          loser.onopen = null;
+          loser.onerror = null;
+          loser.onclose = null;
+          loser.close();
+        };
+
+        wsPre.onopen = () => {
+          if (!resolved) {
+            resolved = true;
+            console.log("Connected to production backend (pre)!");
+            cleanupTempSockets(wsDev);
+            setupSocket(wsPre);
+          } else {
+            wsPre.close();
+          }
+        };
+
+        wsDev.onopen = () => {
+          if (!resolved) {
+            resolved = true;
+            console.log("Connected to development backend (dev)!");
+            cleanupTempSockets(wsPre);
+            setupSocket(wsDev);
+          } else {
+            wsDev.close();
+          }
+        };
+
+        let failures = 0;
+        const handleFailure = (failedSocket: WebSocket) => {
+          failedSocket.onopen = null;
+          failedSocket.onerror = null;
+          failedSocket.onclose = null;
+          failedSocket.close();
+          
+          failures++;
+          if (failures >= 2 && !resolved) {
+            setConnStatus("disconnected");
+            // Schedule reconnect
+            reconnectTimeout = setTimeout(() => {
+              connect();
+            }, 3000);
+          }
+        };
+
+        wsPre.onerror = () => handleFailure(wsPre);
+        wsPre.onclose = () => handleFailure(wsPre);
+        wsDev.onerror = () => handleFailure(wsDev);
+        wsDev.onclose = () => handleFailure(wsDev);
+      }
     };
 
     connect();
 
     return () => {
-      if (socket) socket.close();
+      if (socket) (socket as WebSocket).close();
       clearTimeout(reconnectTimeout);
       clearInterval(heartbeatInterval);
     };
