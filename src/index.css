@@ -38,89 +38,41 @@ body {
   background: rgba(149, 18, 44, 0.75);
 }
 
-/* Premium Keyframe Animations for Alive / Atmospheric Effects */
-@keyframes fogDrift1 {
-  0%, 100% {
-    transform: translate(0px, 0px) scale(1) rotate(0deg);
-  }
-  33% {
-    transform: translate(60px, -40px) scale(1.15) rotate(4deg);
-  }
-  66% {
-    transform: translate(-30px, 30px) scale(0.9) rotate(-3deg);
-  }
-}
-
-@keyframes fogDrift2 {
-  0%, 100% {
-    transform: translate(0px, 0px) scale(1.1) rotate(0deg);
-  }
-  50% {
-    transform: translate(-50px, 50px) scale(0.85) rotate(-6deg);
-  }
-}
-
-@keyframes ambientGlow {
-  0%, 100% {
-    opacity: 0.12;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.22;
-    transform: scale(1.1);
-  }
-}
-
-@keyframes radialPulse {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(149, 18, 44, 0.2), inset 0 0 10px rgba(149, 18, 44, 0.1);
-  }
-  50% {
-    box-shadow: 0 0 35px rgba(149, 18, 44, 0.45), inset 0 0 18px rgba(149, 18, 44, 0.25);
-  }
-}
-
-/* Glassmorphism Surface Designs */
+/* Flat, high-performance card designs optimized for low-end mobile devices */
 .glass-surface {
-  background: rgba(16, 12, 8, 0.55);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background-color: #161210;
+  border: 1px solid #231b18;
+  border-radius: 12px;
 }
 
 .glass-surface-elevated {
-  background: rgba(20, 16, 12, 0.8);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 25px 65px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  background-color: #1e1815;
+  border: 1px solid #2d231e;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .glass-surface-red {
-  background: rgba(149, 18, 44, 0.08);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(149, 18, 44, 0.25);
+  background-color: #1c090c;
+  border: 1px solid #450c14;
+  border-radius: 12px;
 }
 
-/* Premium Buttons */
+/* Premium Buttons - Fast transition, no expensive continuous box shadow animations */
 .btn-primary {
-  background: linear-gradient(135deg, #95122c 0%, #680c1d 100%);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  box-shadow: 0 6px 22px rgba(149, 18, 44, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.15);
-  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  background-color: #95122c;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  transition: background-color 150ms ease-in-out, border-color 150ms ease-in-out, transform 150ms ease-in-out;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #b21635 0%, #7c0e21 100%);
-  border-color: rgba(239, 68, 68, 0.45);
-  box-shadow: 0 10px 32px rgba(149, 18, 44, 0.55), inset 0 1px 1.5px rgba(255, 255, 255, 0.25);
-  transform: translateY(-1.5px);
+  background-color: #b21635;
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 .btn-primary:active:not(:disabled) {
-  transform: translateY(0.5px);
-  box-shadow: 0 3px 12px rgba(149, 18, 44, 0.25);
+  transform: scale(0.98);
 }
 
 /* Noise overlay pattern for texture */

@@ -1,0 +1,41 @@
+# Codemagic CI/CD Configuration for React + Vite + Capacitor (Android)
+# This workflow automatically builds your project and generates a downloadable APK file on every push or pull request.
+
+workflows:
+  android-build:
+    name: Build Android APK
+    max_build_duration: 60
+    instance_type: linux_x2 # Fast Linux VM optimized for Android builds
+    environment:
+      groups:
+        # Define any signing key variables here if needed for Release builds
+      node: latest
+      java: 17
+      android_sdk: 34
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: '*'
+          include: true
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci || npm install
+      - name: Build Web Application
+        script: |
+          npm run build
+      - name: Capacitor Sync Assets
+        script: |
+          npx cap sync android
+      - name: Set permissions for Gradle Wrapper
+        script: |
+          cd android
+          chmod +x gradlew
+      - name: Build Android APK
+        script: |
+          cd android
+          ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/apk/**/*.apk

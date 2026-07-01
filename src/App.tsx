@@ -287,14 +287,20 @@ export default function App() {
 
   const unreadCount = Math.max(0, visibleMessages.length - lastReadCount);
 
-  // Auto transition to dead chat if dead
+  // Auto transition to dead chat if dead (only when transitioning from alive to dead)
+  const wasAliveRef = useRef<boolean>(true);
   useEffect(() => {
     const myPlayer = room?.players.find((p) => p.id === playerId);
-    if (room && myPlayer && !myPlayer.isAlive && activeTab !== "dead") {
-      setActiveTab("dead");
-      addToast("لقد تمت تصفيتك! تم نقلك تلقائياً إلى شات الأموات السري 👻", "danger");
+    if (room && myPlayer) {
+      if (wasAliveRef.current && !myPlayer.isAlive && activeTab !== "dead") {
+        setActiveTab("dead");
+        addToast("لقد تمت تصفيتك! تم نقلك تلقائياً إلى شات الأموات السري 👻", "danger");
+      }
+      wasAliveRef.current = myPlayer.isAlive;
+    } else {
+      wasAliveRef.current = true;
     }
-  }, [room?.players, room?.status, playerId]);
+  }, [room?.players, playerId, activeTab]);
 
   // Transition listeners for cinematic events and sounds
   useEffect(() => {
@@ -588,34 +594,20 @@ export default function App() {
       {/* Ambient noise overlay */}
       <div className="absolute inset-0 noise-overlay z-0 pointer-events-none" />
 
-      {/* Living Atmospheric Aurora / Fog Gradients */}
-      <div 
-        className="absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-[#95122C]/12 pointer-events-none z-0" 
-        style={{ animation: "fogDrift1 26s infinite ease-in-out, ambientGlow 14s infinite ease-in-out", filter: "blur(130px)" }}
-      />
-      <div 
-        className="absolute -bottom-32 -right-32 w-[500px] h-[500px] rounded-full bg-[#95122C]/12 pointer-events-none z-0" 
-        style={{ animation: "fogDrift2 22s infinite ease-in-out, ambientGlow 11s infinite ease-in-out", filter: "blur(130px)" }}
-      />
-      <div 
-        className="absolute top-1/3 left-1/4 w-[400px] h-[400px] rounded-full bg-stone-900/30 pointer-events-none z-0" 
-        style={{ animation: "fogDrift1 30s infinite ease-in-out reverse", filter: "blur(140px)" }}
-      />
-
       {/* Floating Status / Connection Check & Sounds */}
       <div className="absolute top-4 left-4 z-50 flex items-center gap-2">
         <button
           onClick={() => setSoundEnabled(!soundEnabled)}
-          className="p-2.5 rounded-full bg-stone-900/40 backdrop-blur-md border border-stone-800/60 text-stone-400 hover:text-white transition-all cursor-pointer"
+          className="p-2.5 rounded-full bg-stone-900 border border-stone-800 text-stone-400 hover:text-white transition-all cursor-pointer"
           title={soundEnabled ? "كتم الصوت" : "تشغيل الصوت"}
         >
           {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5 text-[#95122C]" />}
         </button>
         <div
-          className={`px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-md flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
             connStatus === "connected"
-              ? "bg-emerald-950/40 text-emerald-400 border border-emerald-800/40"
-              : "bg-amber-950/40 text-amber-400 border border-amber-800/40 animate-pulse"
+              ? "bg-emerald-950 text-emerald-400 border border-emerald-800/40"
+              : "bg-amber-950 text-amber-400 border border-amber-800/40 animate-pulse"
           }`}
         >
           <div className={`w-2 h-2 rounded-full ${connStatus === "connected" ? "bg-emerald-400" : "bg-amber-400"}`} />
@@ -632,12 +624,12 @@ export default function App() {
               initial={{ opacity: 0, y: -20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9, y: -10 }}
-              className={`p-4 rounded-xl backdrop-blur-md shadow-2xl border flex items-center gap-3 pointer-events-auto ${
+              className={`p-4 rounded-xl shadow-2xl border flex items-center gap-3 pointer-events-auto ${
                 toast.type === "success"
-                  ? "bg-emerald-950/80 border-emerald-800/80 text-emerald-100"
+                  ? "bg-emerald-950 border-emerald-800 text-emerald-100"
                   : toast.type === "danger"
-                  ? "bg-red-950/80 border-red-800/80 text-red-100"
-                  : "bg-stone-900/80 border-stone-800/80 text-stone-100"
+                  ? "bg-red-950 border-red-800 text-red-100"
+                  : "bg-stone-900 border-stone-800 text-stone-100"
               }`}
             >
               <div className="shrink-0 text-lg">
@@ -659,24 +651,21 @@ export default function App() {
           {/* Glowing Game Logo/Title with rotating 3D effect */}
           <div className="text-center mb-10 select-none">
             <motion.div
-              initial={{ scale: 0.82, opacity: 0, rotate: -8 }}
-              animate={{ scale: 1, opacity: 1, rotate: 0 }}
-              transition={{ type: "spring", damping: 14 }}
-              whileHover={{ rotate: 12, scale: 1.08 }}
-              className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-gradient-to-br from-[#95122C] to-red-950 border border-red-500/25 shadow-[0_0_60px_rgba(149,18,44,0.35)] mb-5 text-5xl relative cursor-pointer group"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="inline-flex items-center justify-center w-24 h-24 rounded-xl bg-[#95122C] border border-red-500/20 shadow mb-5 text-5xl relative cursor-pointer group"
             >
-              <div className="absolute inset-0 rounded-3xl bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity blur-md" />
               🕶️
             </motion.div>
             <h1 className="text-4xl font-extrabold tracking-tight text-white mb-2 font-sans select-none">
-              لعبة <span className="text-[#95122C] drop-shadow-[0_0_15px_rgba(149,18,44,0.4)]">المافيا</span>
+              لعبة <span className="text-[#95122C]">المافيا</span>
             </h1>
             <p className="text-stone-400 text-xs font-medium tracking-wide">لعبة الغموض، الذكاء، والتآمر الجماعي</p>
           </div>
 
           {/* Nickname Input - Styled with smooth focus and red subtle glows */}
-          <div className="w-full mb-6 glass-surface-elevated p-6 rounded-3xl shadow-2xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-32 h-[1px] bg-gradient-to-l from-[#95122C] to-transparent" />
+          <div className="w-full mb-6 glass-surface-elevated p-6 rounded-xl shadow relative overflow-hidden group">
             <label className="block text-stone-400 text-xs font-bold mb-3 pr-1">الاسم المستعار قبل البدء:</label>
             <div className="relative">
               <input
@@ -828,7 +817,7 @@ export default function App() {
       {room && room.status === "lobby" && (
         <div className="flex-1 flex flex-col max-w-xl mx-auto w-full z-10 px-4 py-6 overflow-hidden">
           {/* Header Card */}
-          <div className="glass-surface-elevated p-6 rounded-3xl text-center mb-6 relative shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+          <div className="glass-surface-elevated p-6 rounded-xl text-center mb-6 relative shadow">
             <motion.button
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
@@ -838,7 +827,7 @@ export default function App() {
               <LogOut className="w-3.5 h-3.5 text-red-500" /> مغادرة
             </motion.button>
             <span className="text-stone-400 text-xs font-bold block mb-3">كود الغرفة لمشاركته مع أصدقائك</span>
-            <div className="inline-flex items-center gap-3 bg-stone-950/95 px-6 py-3 rounded-2xl border border-stone-800 shadow-inner select-all mb-3 group hover:border-[#95122C]/40 transition-colors">
+            <div className="inline-flex items-center gap-3 bg-stone-950 px-6 py-3 rounded-xl border border-stone-800 shadow-sm select-all mb-3 group hover:border-[#95122C]/40 transition-colors">
               <span className="text-2xl font-black tracking-widest font-mono text-white select-all">{room.code}</span>
               <button
                 type="button"
@@ -853,8 +842,7 @@ export default function App() {
           </div>
 
           {/* Players List */}
-          <div className="flex-1 glass-surface-elevated rounded-3xl p-6 flex flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative">
-            <div className="absolute top-0 right-0 w-40 h-[1px] bg-gradient-to-l from-[#95122C]/60 to-transparent" />
+          <div className="flex-1 glass-surface-elevated rounded-xl p-6 flex flex-col overflow-hidden shadow relative">
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
               <h3 className="text-sm font-black text-stone-200">قائمة اللاعبين المتواجدين</h3>
               <span className="px-3 py-1 rounded-full bg-stone-950 text-[10px] font-black border border-stone-800 text-stone-400">
@@ -869,10 +857,10 @@ export default function App() {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.04 }}
-                  className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
+                  className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
                     p.id === playerId
-                      ? "bg-gradient-to-l from-stone-900/80 to-[#95122C]/10 border-[#95122C]/40 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05),0_4px_15px_rgba(149,18,44,0.15)]"
-                      : "bg-stone-950/65 border-stone-900/80 hover:border-white/5"
+                      ? "bg-[#95122C]/10 border-[#95122C]/40 shadow-sm"
+                      : "bg-stone-950 border-stone-900/80 hover:border-white/5"
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -957,24 +945,15 @@ export default function App() {
             animate={{ rotateY: 0, scale: 1, opacity: 1 }}
             transition={{ duration: 0.8, type: "spring", damping: 15 }}
             style={{ transformStyle: "preserve-3d" }}
-            className={`w-full glass-surface-elevated border-2 text-center relative overflow-hidden p-6 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.8)] ${
-              me.role.startsWith("mafia") ? "border-red-900/40 shadow-red-950/20" :
-              me.role === "doctor" ? "border-emerald-900/40 shadow-emerald-950/20" :
-              me.role === "sniper" ? "border-teal-900/40 shadow-teal-950/20" :
-              me.role === "sheikh" ? "border-amber-900/40 shadow-amber-950/20" :
-              me.role === "joker" ? "border-purple-900/40 shadow-purple-950/20" :
-              "border-stone-800 shadow-black/60"
+            className={`w-full glass-surface-elevated border-2 text-center relative overflow-hidden p-6 rounded-xl shadow-lg ${
+              me.role.startsWith("mafia") ? "border-red-900/40" :
+              me.role === "doctor" ? "border-emerald-900/40" :
+              me.role === "sniper" ? "border-teal-900/40" :
+              me.role === "sheikh" ? "border-amber-900/40" :
+              me.role === "joker" ? "border-purple-900/40" :
+              "border-stone-800"
             }`}
           >
-            {/* Cinematic background flare */}
-            <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-48 h-[3px] bg-gradient-to-r from-transparent via-[#95122C] to-transparent shadow-lg ${
-              me.role.startsWith("mafia") ? "via-red-500 shadow-red-500/50" :
-              me.role === "doctor" ? "via-emerald-400 shadow-emerald-400/50" :
-              me.role === "sniper" ? "via-teal-400 shadow-teal-400/50" :
-              me.role === "sheikh" ? "via-amber-400 shadow-amber-400/50" :
-              me.role === "joker" ? "via-purple-400 shadow-purple-400/50" :
-              "via-stone-400 shadow-stone-400/50"
-            }`} />
 
             <span className="text-[9px] text-stone-500 font-black uppercase tracking-widest block mb-2 select-none">بطاقة دورك السري</span>
             <h2 className="text-xl font-black mb-5 text-stone-200 select-none leading-none">اعرف هويتك...</h2>
@@ -1001,11 +980,11 @@ export default function App() {
             {/* Role Title in Arabic */}
             <h3
               className={`text-2xl font-black mb-4 select-none ${
-                me.role.startsWith("mafia") ? "text-rose-500 drop-shadow-[0_0_10px_rgba(244,63,94,0.35)]" :
-                me.role === "doctor" ? "text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.35)]" :
-                me.role === "sniper" ? "text-teal-400 drop-shadow-[0_0_10px_rgba(45,212,191,0.35)]" :
-                me.role === "sheikh" ? "text-amber-400 drop-shadow-[0_0_10px_rgba(245,158,11,0.35)]" :
-                me.role === "joker" ? "text-purple-400 drop-shadow-[0_0_10px_rgba(168,85,247,0.35)]" :
+                me.role.startsWith("mafia") ? "text-rose-500" :
+                me.role === "doctor" ? "text-emerald-400" :
+                me.role === "sniper" ? "text-teal-400" :
+                me.role === "sheikh" ? "text-amber-400" :
+                me.role === "joker" ? "text-purple-400" :
                 "text-stone-100"
               }`}
             >
@@ -1107,27 +1086,27 @@ export default function App() {
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-stone-900/40 backdrop-blur-md border border-stone-800/60 p-8 rounded-3xl text-center mb-6"
+            className="bg-stone-900 border border-stone-800 p-8 rounded-xl text-center mb-6 shadow"
           >
             <div className="text-6xl mb-4">🏆</div>
             <h2 className="text-4xl font-black text-white mb-2 font-sans">انتهت اللعبة!</h2>
             <div
               className={`inline-block px-6 py-2 rounded-full font-bold text-lg mb-6 border ${
                 room.winner === "citizens"
-                  ? "bg-emerald-950/60 text-emerald-400 border-emerald-800/80 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-                  : "bg-red-950/60 text-rose-500 border-red-800/80 shadow-[0_0_20px_rgba(244,63,94,0.2)]"
+                  ? "bg-emerald-950 text-emerald-400 border-emerald-800/80"
+                  : "bg-red-950 text-rose-500 border-red-800/80"
               }`}
             >
               {room.winner === "citizens" ? "🎉 فاز فريق المواطنين!" : "👿 فاز فريق المافيا!"}
             </div>
 
             {/* Detailed players recap table */}
-            <div className="bg-stone-950/80 border border-stone-800 rounded-2xl p-4 text-right mb-6">
+            <div className="bg-stone-950 border border-stone-800 rounded-xl p-4 text-right mb-6">
               <h3 className="text-xs font-extrabold text-stone-400 mb-4 pr-1 border-b border-stone-800 pb-2">هويات وأدوار جميع اللاعبين الحقيقية</h3>
               <div className="space-y-3 overflow-y-auto max-h-[300px] pr-1">
                 {room.players.map((p) => {
                   return (
-                    <div key={p.id} className="flex items-center justify-between p-2.5 rounded-xl bg-stone-900/40 border border-stone-850/60">
+                    <div key={p.id} className="flex items-center justify-between p-2.5 rounded-xl bg-stone-900 border border-stone-850/60">
                       <div className="flex items-center gap-2.5">
                         {getPlayerAvatar(p, "w-8 h-8 text-sm")}
                         <div>
@@ -1164,12 +1143,12 @@ export default function App() {
             {isHost ? (
               <button
                 onClick={restartGame}
-                className="w-full bg-[#95122C] hover:bg-red-700 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-[0_0_20px_rgba(149,18,44,0.3)] hover:shadow-[0_0_30px_rgba(149,18,44,0.6)] cursor-pointer text-sm"
+                className="w-full bg-[#95122C] hover:bg-red-700 text-white font-bold py-4 px-6 rounded-xl transition-all cursor-pointer text-sm"
               >
                 🔄 إعادة تعيين وبدء مباراة جديدة باللوبي
               </button>
             ) : (
-              <div className="text-xs text-stone-500 text-center animate-pulse bg-stone-950/40 py-3 rounded-xl border border-stone-900">
+              <div className="text-xs text-stone-500 text-center bg-stone-950 py-3 rounded-xl border border-stone-900">
                 ⏳ بانتظار صاحب الغرفة للعودة بالجميع للوبي...
               </div>
             )}
@@ -1184,8 +1163,7 @@ export default function App() {
         <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full z-10 p-4 gap-4 relative overflow-hidden h-full">
           
           {/* Top Header Bar */}
-          <header className="flex flex-col sm:flex-row items-center justify-between gap-4 px-8 py-3 glass-surface-elevated border border-white/10 rounded-2xl shadow-lg relative shrink-0">
-            <div className="absolute top-0 right-1/4 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-[#95122C]/70 to-transparent" />
+          <header className="flex flex-col sm:flex-row items-center justify-between gap-4 px-8 py-3 glass-surface border border-white/5 rounded-xl shadow relative shrink-0">
             
             <div className="flex items-center gap-6">
               <div className="flex flex-col text-right">
@@ -1202,20 +1180,20 @@ export default function App() {
             </div>
 
             <div className="flex flex-col items-center">
-              <div className="text-3xl font-mono font-black tracking-widest text-[#95122C] flex items-center gap-1.5 drop-shadow-[0_0_15px_rgba(149,18,44,0.4)]">
-                <span className="animate-pulse text-xl">●</span>
+              <div className="text-3xl font-mono font-black tracking-widest text-[#95122C] flex items-center gap-1.5">
+                <span className="text-xl">●</span>
                 {String(Math.floor(room.timer / 60)).padStart(2, "0")}:{String(room.timer % 60).padStart(2, "0")}
               </div>
               <div className="w-48 h-1 bg-white/5 rounded-full mt-1.5 overflow-hidden border border-white/5">
                 <div 
-                  className="h-full bg-gradient-to-r from-[#95122C] to-red-500 transition-all duration-1000" 
+                  className="h-full bg-[#95122C] transition-all duration-1000" 
                   style={{ width: `${(room.timer / (room.status === "night" ? 30 : room.status === "voting" ? 20 : room.dayDuration)) * 100}%` }} 
                 />
               </div>
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="bg-stone-950/80 border border-white/5 px-4 py-2 rounded-xl flex items-center gap-2.5 shadow-inner">
+              <div className="bg-stone-950 border border-white/5 px-4 py-2 rounded-xl flex items-center gap-2.5 shadow-inner">
                 <span className="text-[10px] text-stone-400 font-bold">كود الغرفة:</span>
                 <span className="text-base font-mono font-black tracking-widest text-white">{room.code}</span>
                 <button 
@@ -1230,8 +1208,7 @@ export default function App() {
           </header>
 
           {/* Main Content Area: Players Grid */}
-          <main className="flex-1 p-5 glass-surface border border-white/5 rounded-2xl flex flex-col overflow-hidden min-h-[180px] shadow-lg relative">
-            <div className="absolute top-0 right-0 w-32 h-[1px] bg-gradient-to-l from-white/10 to-transparent" />
+          <main className="flex-1 p-5 glass-surface border border-white/5 rounded-xl flex flex-col overflow-hidden min-h-[180px] shadow relative">
             <div className="flex justify-between items-center mb-3 shrink-0">
               <h4 className="text-[10px] font-black tracking-wide text-stone-400 pr-1 uppercase">حالة لاعبي المدينة</h4>
               <div className="flex gap-1.5">
@@ -1261,11 +1238,11 @@ export default function App() {
                     animate={{ rotateY: p.isAlive ? 0 : 180 }}
                     transition={{ duration: 0.6, ease: "easeInOut" }}
                     style={{ transformStyle: "preserve-3d" }}
-                    className={`relative rounded-2xl p-3.5 flex flex-col items-center justify-center transition-all border ${
+                    className={`relative rounded-xl p-3.5 flex flex-col items-center justify-center transition-all border ${
                       !p.isAlive
-                        ? "bg-stone-950/80 border-red-950/40 shadow-[0_5px_15px_rgba(244,63,94,0.05)]"
+                        ? "bg-stone-950/80 border-stone-850"
                         : p.id === playerId
-                        ? "bg-[#95122C]/10 border-[#95122C]/40 shadow-[0_0_20px_rgba(149,18,44,0.12)]"
+                        ? "bg-[#95122C]/10 border-[#95122C]/40 shadow-sm"
                         : "bg-white/5 border-white/5 hover:bg-white/8 hover:border-white/10"
                     }`}
                   >
@@ -1273,10 +1250,10 @@ export default function App() {
                       {/* Avatar block */}
                       <div className="relative mb-1">
                         <div className={`w-14 h-14 rounded-full border ${
-                          p.isMuted && p.isAlive ? "border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.2)]" :
-                          p.revealedSheikh && p.isAlive ? "border-amber-400 shadow-[0_0_15px_#f59e0b] animate-pulse" :
+                          p.isMuted && p.isAlive ? "border-red-500/50" :
+                          p.revealedSheikh && p.isAlive ? "border-amber-400" :
                           !p.isAlive ? "border-stone-700" :
-                          p.id === playerId ? "border-[#95122C] shadow-[0_0_15px_rgba(149,18,44,0.3)]" : "border-white/10"
+                          p.id === playerId ? "border-[#95122C]" : "border-white/10"
                         } p-1`}>
                           <div className={`w-full h-full rounded-full bg-gradient-to-br ${avatar.gradient} flex items-center justify-center text-xl`}>
                             {p.isAlive ? (p.revealedSheikh ? "👳" : avatar.emoji) : "💀"}
@@ -1317,7 +1294,7 @@ export default function App() {
 
                       {/* Voting dynamic bubbles */}
                       {room.status === "voting" && voteCountDisplay > 0 && (
-                        <div className="absolute top-2 left-2 bg-red-950 text-rose-400 border border-red-900 text-[9px] font-black rounded-full w-5 h-5 flex items-center justify-center animate-bounce">
+                        <div className="absolute top-2 left-2 bg-red-950 text-rose-400 border border-red-900 text-[9px] font-black rounded-full w-5 h-5 flex items-center justify-center shadow">
                           {voteCountDisplay}
                         </div>
                       )}
@@ -1331,7 +1308,7 @@ export default function App() {
 
                       {/* Connectivity dot */}
                       <div className="absolute top-2 left-2 flex gap-1">
-                        <div className={`w-1.5 h-1.5 rounded-full ${p.isOffline ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`} />
+                        <div className={`w-1.5 h-1.5 rounded-full ${p.isOffline ? "bg-amber-500" : "bg-emerald-500"}`} />
                       </div>
                     </div>
                   </motion.div>
@@ -1343,9 +1320,9 @@ export default function App() {
           {/* Bottom Chat and Controls Area */}
           <div className="flex flex-col md:flex-row gap-4 w-full items-stretch shrink-0">
             {/* 1. Standalone Event Log Card */}
-            <div className="flex-1 glass-surface border border-white/5 rounded-2xl p-4 flex flex-col h-[280px] overflow-hidden shadow-lg">
+            <div className="flex-1 glass-surface border border-white/5 rounded-xl p-4 flex flex-col h-[280px] overflow-hidden shadow">
               <div className="flex items-center gap-1.5 border-b border-white/5 pb-2 mb-3 shrink-0 select-none">
-                <ScrollText className="w-4 h-4 text-[#95122C] animate-pulse" />
+                <ScrollText className="w-4 h-4 text-[#95122C]" />
                 <h3 className="text-xs font-black text-stone-200">سجل الأحداث</h3>
               </div>
               <div ref={eventsContainerRef} className="flex-1 overflow-y-auto space-y-2 px-1 flex flex-col">
@@ -1353,7 +1330,7 @@ export default function App() {
                   room.eventsLog.map((event) => (
                     <div 
                       key={event.id} 
-                      className="flex gap-2.5 items-start bg-stone-950/50 border border-stone-900/60 p-2.5 rounded-xl text-stone-100 shadow-sm shrink-0 hover:bg-white/5 transition-colors"
+                      className="flex gap-2.5 items-start bg-stone-950 border border-stone-900/60 p-2.5 rounded-xl text-stone-100 shadow-sm shrink-0 hover:bg-white/5 transition-colors"
                     >
                       <div className="text-base select-none pt-0.5">{event.icon}</div>
                       <div className="flex-1 flex flex-col gap-0.5 text-right">
@@ -1364,7 +1341,7 @@ export default function App() {
                   ))
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-center text-stone-600 py-6 gap-2 select-none">
-                    <ScrollText className="w-8 h-8 text-stone-800 animate-pulse" />
+                    <ScrollText className="w-8 h-8 text-stone-800" />
                     <span className="text-xs font-bold">لا توجد أحداث مسجلة حالياً في هذه المباراة</span>
                   </div>
                 )}
@@ -1372,10 +1349,10 @@ export default function App() {
             </div>
 
             {/* 3. Side Action/Controls Card */}
-            <div className="w-full md:w-64 glass-surface-elevated border border-white/5 rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-lg shrink-0">
+            <div className="w-full md:w-64 glass-surface-elevated border border-white/5 rounded-xl p-4 flex flex-col justify-between gap-4 shadow shrink-0">
               <div className="space-y-4">
                 {/* Live Players Indicator */}
-                <div className="bg-stone-950/70 border border-stone-900/50 p-3 rounded-xl select-none shadow-inner">
+                <div className="bg-stone-950 border border-stone-900/50 p-3 rounded-xl select-none">
                   <div className="flex justify-between text-[10px] mb-1 text-stone-400 font-bold">
                     <span>اللاعبين الأحياء</span>
                     <span className="text-white">
@@ -1413,7 +1390,7 @@ export default function App() {
                     <div className="space-y-2">
                       {/* Killer selection list */}
                       {(me.role === "mafia_killer" || me.role === "mafia_single") && (
-                        <div className="bg-stone-950/70 border border-stone-900/60 p-2 rounded-xl">
+                        <div className="bg-stone-950 border border-stone-900/60 p-2 rounded-xl">
                           <span className="text-[9px] text-rose-400 font-black block mb-1.5 text-right">اختر للتصفية الليلة:</span>
                           <div className="flex flex-col gap-1 max-h-[85px] overflow-y-auto">
                             {room.players.filter(p => p.isAlive).map(p => (
@@ -1423,8 +1400,8 @@ export default function App() {
                                 onClick={() => submitNightAction("kill", room.mafiaTarget === p.id ? null : p.id)}
                                 className={`w-full text-right px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
                                   room.mafiaTarget === p.id
-                                    ? "bg-rose-950/50 border-rose-600/60 text-rose-200 font-black"
-                                    : "bg-stone-900/40 border-stone-850 text-stone-400 hover:text-white"
+                                    ? "bg-rose-950 border-rose-600/60 text-rose-200 font-black"
+                                    : "bg-stone-900 border-stone-850 text-stone-400 hover:text-white"
                                 }`}
                               >
                                 💀 {p.nickname}
@@ -1436,7 +1413,7 @@ export default function App() {
 
                       {/* Muter selection list */}
                       {(me.role === "mafia_muter" || me.role === "mafia_single") && (
-                        <div className="bg-stone-950/70 border border-stone-900/60 p-2 rounded-xl">
+                        <div className="bg-stone-950 border border-stone-900/60 p-2 rounded-xl">
                           <span className="text-[9px] text-amber-400 font-black block mb-1.5 text-right">اختر لتسكيته بالغد:</span>
                           <div className="flex flex-col gap-1 max-h-[85px] overflow-y-auto">
                             {room.players.filter(p => p.isAlive).map(p => (
@@ -1446,8 +1423,8 @@ export default function App() {
                                 onClick={() => submitNightAction("mute", room.muteTarget === p.id ? null : p.id)}
                                 className={`w-full text-right px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
                                   room.muteTarget === p.id
-                                    ? "bg-amber-950/50 border-amber-600/60 text-amber-200 font-black"
-                                    : "bg-stone-900/40 border-stone-850 text-stone-400 hover:text-white"
+                                    ? "bg-amber-950 border-amber-600/60 text-amber-200 font-black"
+                                    : "bg-stone-900 border-stone-850 text-stone-400 hover:text-white"
                                 }`}
                               >
                                 🤐 {p.nickname}
@@ -1459,7 +1436,7 @@ export default function App() {
 
                       {/* Doctor selection list */}
                       {me.role === "doctor" && (
-                        <div className="bg-stone-950/70 border border-stone-900/60 p-2 rounded-xl">
+                        <div className="bg-stone-950 border border-stone-900/60 p-2 rounded-xl">
                           <span className="text-[9px] text-emerald-400 font-black block mb-1.5 text-right">اختر لحمايته الليلة:</span>
                           <div className="flex flex-col gap-1 max-h-[85px] overflow-y-auto">
                             {room.players.filter(p => p.isAlive).map(p => (
@@ -1469,8 +1446,8 @@ export default function App() {
                                 onClick={() => submitNightAction("protect", room.doctorTarget === p.id ? null : p.id)}
                                 className={`w-full text-right px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
                                   room.doctorTarget === p.id
-                                    ? "bg-emerald-950/50 border-emerald-600/60 text-emerald-200 font-black"
-                                    : "bg-stone-900/40 border-stone-850 text-stone-400 hover:text-white"
+                                    ? "bg-emerald-950 border-emerald-600/60 text-emerald-200 font-black"
+                                    : "bg-stone-900 border-stone-850 text-stone-400 hover:text-white"
                                 }`}
                               >
                                 🛡️ {p.nickname} {p.id === playerId && "(أنت)"}
@@ -1482,7 +1459,7 @@ export default function App() {
 
                       {/* Sniper selection list */}
                       {me.role === "sniper" && (
-                        <div className="bg-stone-950/70 border border-stone-900/60 p-2 rounded-xl">
+                        <div className="bg-stone-950 border border-stone-900/60 p-2 rounded-xl">
                           <span className="text-[9px] text-teal-400 font-black block mb-1.5 text-right">اختر لقنصه الليلة:</span>
                           {room.sniperHasShot ? (
                             <span className="text-[8px] text-stone-500 block text-right font-bold">لقد نفذت ذخيرتك السحرية.</span>
@@ -1495,8 +1472,8 @@ export default function App() {
                                   onClick={() => submitNightAction("shoot", room.sniperTarget === p.id ? null : p.id)}
                                   className={`w-full text-right px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
                                     room.sniperTarget === p.id
-                                      ? "bg-teal-950/50 border-teal-600/60 text-teal-200 font-black"
-                                      : "bg-stone-900/40 border-stone-850 text-stone-400 hover:text-white"
+                                      ? "bg-teal-950 border-teal-600/60 text-teal-200 font-black"
+                                      : "bg-stone-900 border-stone-850 text-stone-400 hover:text-white"
                                   }`}
                                 >
                                   🔥 قنص {p.nickname}
@@ -1507,10 +1484,10 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* Ordinary Citizen / Joker / Sheikh waiting with elegant breathe */}
+                      {/* Ordinary Citizen / Joker / Sheikh waiting */}
                       {(me.role === "citizen" || me.role === "joker" || (me.role === "sheikh" && !me.revealedSheikh)) && (
                         <div className="text-center py-4 select-none">
-                          <Moon className="w-5 h-5 text-indigo-400 mx-auto mb-1 animate-bounce" />
+                          <Moon className="w-5 h-5 text-indigo-400 mx-auto mb-1" />
                           <span className="text-[10px] text-indigo-200 block font-bold">نوم هادئ بانتظار الصباح...</span>
                         </div>
                       )}
@@ -1519,7 +1496,7 @@ export default function App() {
 
                   {/* Day brief Outcome text banner if active */}
                   {room.status === "day" && (
-                    <div className="bg-stone-950/70 border border-stone-900/60 p-3 rounded-xl text-right shadow-inner">
+                    <div className="bg-stone-950 border border-stone-900/60 p-3 rounded-xl text-right">
                       <span className="text-[9px] text-amber-400 font-black block mb-1">الموجز الصباحي:</span>
                       <p className="text-[10px] text-stone-300 leading-relaxed font-semibold">
                         {room.nightOutcomeText || "مر الليل بسلام تام دون حدوث أي إصابات خطيرة بالمدينة."}
@@ -1529,7 +1506,7 @@ export default function App() {
 
                   {/* Voting selection buttons panel */}
                   {isAlive && !me.isMuted && room.status === "voting" && (
-                    <div className="bg-stone-950/70 border border-stone-900/60 p-2 rounded-xl">
+                    <div className="bg-stone-950 border border-stone-900/60 p-2 rounded-xl">
                       <span className="text-[9px] text-rose-400 font-black block mb-1.5 text-right">حدد الشخص المراد نفيه:</span>
                       {room.votes[playerId] ? (
                         <span className="text-[9px] text-emerald-400 block text-center font-black">✔️ تم تسجيل صوتك بنجاح.</span>
@@ -1540,7 +1517,7 @@ export default function App() {
                               key={p.id}
                               type="button"
                               onClick={() => submitVote(p.id)}
-                              className="w-full text-right px-2.5 py-1.5 rounded-lg text-[9px] font-bold bg-stone-900/40 hover:bg-[#95122C]/10 border border-stone-850 hover:border-[#95122C]/30 text-stone-300 hover:text-white transition-all cursor-pointer"
+                              className="w-full text-right px-2.5 py-1.5 rounded-lg text-[9px] font-bold bg-stone-900 hover:bg-[#95122C]/10 border border-stone-850 hover:border-[#95122C]/30 text-stone-300 hover:text-white transition-all cursor-pointer"
                             >
                               🗳️ {p.nickname}
                             </button>
@@ -1552,14 +1529,14 @@ export default function App() {
 
                   {/* Ghost observer info */}
                   {!isAlive && (
-                    <div className="bg-stone-950/70 border border-stone-900/60 p-3 rounded-xl text-center select-none shadow-inner">
-                      <Skull className="w-5 h-5 text-stone-500 mx-auto mb-1 animate-pulse" />
+                    <div className="bg-stone-950 border border-stone-900/60 p-3 rounded-xl text-center select-none">
+                      <Skull className="w-5 h-5 text-stone-500 mx-auto mb-1" />
                       <span className="text-[10px] text-stone-400 block font-bold">أنت تتابع بصمت ومراقبة</span>
                     </div>
                   )}
                 </div>
               </div>
-              
+
               <div className="text-center select-none mt-2 shrink-0">
                 <div className="text-[9px] text-stone-500 uppercase tracking-widest mb-1.5 font-bold">
                   {me.role.startsWith("mafia") ? "فريق المافيا 👿" : "فريق المواطنين 🤝"}
@@ -1592,20 +1569,14 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 1.5 }}
-            className="fixed inset-0 bg-black/95 z-40 flex flex-col items-center justify-center pointer-events-none"
+            transition={{ duration: 0.8 }}
+            className="fixed inset-0 bg-stone-950 z-40 flex flex-col items-center justify-center pointer-events-none"
           >
-            <motion.div
-              initial={{ scale: 0.7, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 1.3, opacity: 0 }}
-              transition={{ duration: 1.5 }}
-              className="text-center"
-            >
-              <span className="text-8xl block mb-4 animate-pulse select-none">🌙</span>
+            <div className="text-center">
+              <span className="text-8xl block mb-4 select-none">🌙</span>
               <h2 className="text-3xl font-extrabold text-indigo-300 font-sans tracking-wide">الليل يرخي سدوله...</h2>
               <p className="text-stone-400 text-xs mt-2 font-medium">أغمض عينيك... المافيا تستيقظ الآن</p>
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1617,15 +1588,8 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden backdrop-blur-md"
+            className="fixed inset-0 bg-stone-950 z-50 flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden"
           >
-            {/* Background visual effects */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
-              <div className="absolute inset-0 bg-radial-gradient from-rose-950/20 via-transparent to-transparent opacity-80" />
-              <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-red-900/10 rounded-full filter blur-[120px] animate-pulse" />
-              <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-900/10 rounded-full filter blur-[120px] animate-pulse" />
-            </div>
-
             <motion.div
               initial={{ scale: 0.8, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
@@ -1640,15 +1604,11 @@ export default function App() {
                     initial={{ rotate: -10, scale: 0.5 }}
                     animate={{ rotate: 0, scale: 1 }}
                     transition={{ delay: 0.1, type: "spring" }}
-                    className="w-24 h-24 rounded-full bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.5)] border border-red-500 mx-auto"
+                    className="w-24 h-24 rounded-full bg-[#95122C] flex items-center justify-center border border-red-500 mx-auto"
                   >
-                    <Flame className="w-12 h-12 text-white animate-bounce" />
+                    <Flame className="w-12 h-12 text-white" />
                   </motion.div>
-                  <motion.h2 
-                    className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-amber-400 to-yellow-500 tracking-tight font-sans"
-                    animate={{ textShadow: ["0 0 10px rgba(239,68,68,0.3)", "0 0 30px rgba(245,158,11,0.6)", "0 0 10px rgba(239,68,68,0.3)"] }}
-                    transition={{ repeat: Infinity, duration: 2 }}
-                  >
+                  <motion.h2 className="text-4xl sm:text-5xl font-black text-red-500 tracking-tight font-sans">
                     بدأت المباراة!
                   </motion.h2>
                   <p className="text-stone-400 text-sm font-medium">استعد لمعرفة دورك السري وتحقيق النصر لشعبك...</p>
@@ -1665,23 +1625,9 @@ export default function App() {
                       transition={{ duration: 1.2, ease: "easeOut" }}
                       className="relative"
                     >
-                      <Skull className="w-28 h-28 text-stone-700 filter drop-shadow-[0_0_20px_rgba(0,0,0,0.9)]" />
-                      <motion.div
-                        initial={{ rotate: 0 }}
-                        animate={{ rotate: [0, -45, 10, 0] }}
-                        transition={{ duration: 1.0, times: [0, 0.4, 0.6, 1.0], delay: 1.2 }}
-                        className="absolute top-0 right-0 text-5xl"
-                      >
-                        🔪
-                      </motion.div>
+                      <Skull className="w-28 h-28 text-stone-700" />
+                      <div className="absolute top-0 right-0 text-5xl">🔪</div>
                     </motion.div>
-
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: [0, 1, 0] }}
-                      transition={{ duration: 0.4, times: [0, 0.2, 1], delay: 1.5 }}
-                      className="absolute inset-0 bg-red-600/30 rounded-3xl"
-                    />
                   </div>
                   <motion.h2 
                     initial={{ opacity: 0 }}
@@ -1701,17 +1647,12 @@ export default function App() {
                   <div className="h-48 flex items-center justify-center relative">
                     <motion.div
                       initial={{ scale: 0.5, opacity: 0 }}
-                      animate={{ scale: [0.5, 1.2, 1], opacity: 1 }}
+                      animate={{ scale: 1, opacity: 1 }}
                       transition={{ duration: 1.2, ease: "easeOut" }}
-                      className="w-28 h-28 rounded-full bg-emerald-500/10 border-4 border-emerald-400/80 flex items-center justify-center shadow-[0_0_60px_rgba(52,211,153,0.4)] mx-auto"
+                      className="w-28 h-28 rounded-full bg-emerald-950/40 border-4 border-emerald-500 flex items-center justify-center shadow mx-auto"
                     >
-                      <Heart className="w-14 h-14 text-emerald-400 animate-pulse" />
+                      <Heart className="w-14 h-14 text-emerald-400" />
                     </motion.div>
-                    <motion.div
-                      animate={{ scale: [1, 2], opacity: [0.5, 0] }}
-                      transition={{ repeat: Infinity, duration: 1.5 }}
-                      className="absolute w-28 h-28 rounded-full border-2 border-emerald-400/30"
-                    />
                   </div>
                   <motion.h2 className="text-3xl font-black text-emerald-400 font-sans">
                     🩺 نبضة أمل!
@@ -1730,15 +1671,8 @@ export default function App() {
                       transition={{ type: "spring", damping: 15 }}
                       className="relative"
                     >
-                      <Target className="w-28 h-28 text-teal-400 animate-spin-slow filter drop-shadow-[0_0_20px_rgba(45,212,191,0.5)]" />
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0 }}
-                        animate={{ opacity: [0, 1, 1], scale: [0, 1.5, 1] }}
-                        transition={{ delay: 0.3, duration: 0.4 }}
-                        className="absolute inset-0 flex items-center justify-center text-red-500 text-4xl"
-                      >
-                        💥
-                      </motion.div>
+                      <Target className="w-28 h-28 text-teal-400" />
+                      <div className="absolute inset-0 flex items-center justify-center text-red-500 text-4xl">💥</div>
                     </motion.div>
                   </div>
                   <motion.h2 className="text-3xl font-black text-teal-400 font-sans">
@@ -1756,20 +1690,10 @@ export default function App() {
                       initial={{ scale: 0.8, rotate: -45, opacity: 0 }}
                       animate={{ scale: 1, rotate: 0, opacity: 1 }}
                       transition={{ type: "spring", damping: 12 }}
-                      className="text-7xl filter drop-shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+                      className="text-7xl"
                     >
                       🤐
                     </motion.div>
-                    <div className="absolute inset-x-0 bottom-4 flex justify-center items-center gap-1">
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <motion.div
-                          key={i}
-                          animate={{ height: [4, 24, 4] }}
-                          transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.1 }}
-                          className="w-1.5 bg-stone-500 rounded-full"
-                        />
-                      ))}
-                    </div>
                   </div>
                   <motion.h2 className="text-3xl font-black text-stone-300 font-sans">
                     🤐 صمتٌ مطبق...
@@ -1783,10 +1707,9 @@ export default function App() {
                 <div className="space-y-6">
                   <div className="h-48 flex items-center justify-center">
                     <motion.div
-                      initial={{ rotate: -15, scale: 0.8 }}
-                      animate={{ rotate: [0, -10, 10, 0], scale: 1 }}
-                      transition={{ duration: 1.5, repeat: Infinity, repeatType: "reverse" }}
-                      className="w-28 h-28 rounded-full bg-amber-500/10 border-4 border-amber-500 flex items-center justify-center shadow-[0_0_50px_rgba(245,158,11,0.3)] mx-auto"
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      className="w-28 h-28 rounded-full bg-amber-950/40 border-4 border-amber-500 flex items-center justify-center shadow mx-auto"
                     >
                       <span className="text-5xl">⚖️</span>
                     </motion.div>
@@ -1802,14 +1725,7 @@ export default function App() {
               {activeCinematic.type === "tie" && (
                 <div className="space-y-6">
                   <div className="h-48 flex items-center justify-center">
-                    <motion.div
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ duration: 0.8 }}
-                      className="text-7xl filter drop-shadow-lg"
-                    >
-                      ⚖️
-                    </motion.div>
+                    <div className="text-7xl">⚖️</div>
                   </div>
                   <motion.h2 className="text-2xl font-black text-stone-300 font-sans">
                     انتهى التصويت بالتعادل!
@@ -1826,12 +1742,12 @@ export default function App() {
                       initial={{ scale: 0.5, y: 50 }}
                       animate={{ scale: 1, y: 0 }}
                       transition={{ type: "spring", damping: 12 }}
-                      className="w-28 h-28 rounded-full bg-gradient-to-tr from-blue-500 to-amber-500 flex items-center justify-center shadow-[0_0_65px_rgba(59,130,246,0.6)] border-2 border-amber-300 mx-auto"
+                      className="w-28 h-28 rounded-full bg-stone-900 flex items-center justify-center border-2 border-amber-500 mx-auto"
                     >
-                      <Crown className="w-14 h-14 text-white animate-bounce" />
+                      <Crown className="w-14 h-14 text-white" />
                     </motion.div>
                   </div>
-                  <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-amber-300 to-yellow-400 font-sans leading-tight">
+                  <h2 className="text-4xl font-extrabold text-amber-400 font-sans leading-tight">
                     انتصار أهالي المدينة! 🎉
                   </h2>
                   <p className="text-stone-400 text-sm font-medium">تخلص أهالي المدينة الشرفاء من خطر عصابة المافيا بالكامل وعمّ الأمان والعدالة.</p>
@@ -1846,12 +1762,12 @@ export default function App() {
                       initial={{ scale: 0.5, rotateY: 180 }}
                       animate={{ scale: 1, rotateY: 0 }}
                       transition={{ type: "spring", damping: 10 }}
-                      className="w-28 h-28 rounded-full bg-gradient-to-tr from-stone-900 to-rose-950 flex items-center justify-center shadow-[0_0_65px_rgba(244,63,94,0.6)] border-2 border-rose-600 mx-auto"
+                      className="w-28 h-28 rounded-full bg-stone-900 flex items-center justify-center border-2 border-rose-600 mx-auto"
                     >
-                      <Skull className="w-14 h-14 text-rose-500 animate-pulse" />
+                      <Skull className="w-14 h-14 text-rose-500" />
                     </motion.div>
                   </div>
-                  <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-rose-600 via-red-500 to-orange-600 font-sans leading-tight">
+                  <h2 className="text-4xl font-extrabold text-rose-600 font-sans leading-tight">
                     سيطرة المافيا بالكامل! 💀
                   </h2>
                   <p className="text-stone-400 text-sm font-medium">أحكمت عصابة المافيا قبضتها الغامضة والمخيفة على المدينة، وحققت انتصاراً ساحقاً.</p>
@@ -2027,8 +1943,9 @@ export default function App() {
 
                   {/* Input area */}
                   {activeTab === "general" && !me.isAlive ? (
-                    <div className="bg-red-950/20 border border-red-900/30 rounded-xl px-4 py-3.5 text-center text-[10px] text-red-300 font-bold shrink-0 shadow-inner select-none">
+                    <div className="bg-red-950/20 border border-red-900/30 rounded-xl px-4 py-3 text-center text-[10px] text-red-300 font-bold shrink-0 shadow-inner select-none">
                       💀 أنت ميت، يمكنك مشاهدة الشات العام فقط، أما الكتابة فهي متاحة في شات الأموات.
+                      <div className="text-[9px] text-stone-400 mt-1">You cannot send messages while dead.</div>
                     </div>
                   ) : (
                     <form onSubmit={sendChatMessage} className="flex gap-2.5 shrink-0 select-none">
