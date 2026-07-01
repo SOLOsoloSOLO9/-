@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Room",
+      "description": "Represents a single game room for the Mafia game.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "status": { "type": "string" },
+        "round": { "type": "integer" },
+        "dayDuration": { "type": "integer" },
+        "timer": { "type": "integer" },
+        "winner": { "type": "string" },
+        "nightOutcomeText": { "type": "string" },
+        "voteOutcomeText": { "type": "string" },
+        "firstNightDeathOccurred": { "type": "boolean" },
+        "firstVoteEliminationOccurred": { "type": "boolean" },
+        "jokerChoice": { "type": "string" },
+        "jokerCopiedRole": { "type": "string" },
+        "votes": { "type": "object" },
+        "messages": { "type": "array" },
+        "eventsLog": { "type": "array" },
+        "mafiaTarget": { "type": "string" },
+        "muteTarget": { "type": "string" },
+        "doctorTarget": { "type": "string" },
+        "sniperTarget": { "type": "string" },
+        "sniperHasShot": { "type": "boolean" },
+        "phaseEndsAt": { "type": "number" },
+        "players": { "type": "array" }
+      },
+      "required": ["code", "status", "round", "dayDuration", "players"]
+    },
+    "PlayerPrivate": {
+      "title": "PlayerPrivate",
+      "description": "Private, secure details of a player (e.g. role) accessible only by the player.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string" },
+        "mafiaTeammates": { "type": "array" }
+      },
+      "required": ["role"]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomCode}": {
+      "schema": "Room",
+      "description": "Public state of a game room."
+    },
+    "/rooms/{roomCode}/playersPrivate/{playerId}": {
+      "schema": "PlayerPrivate",
+      "description": "Private state (such as the player's secret role) of a player."
+    }
+  }
+}

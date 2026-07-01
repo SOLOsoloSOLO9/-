@@ -8,6 +8,7 @@ export interface Player {
   role: string; // empty unless revealed or current player
   isMuted: boolean;
   revealedSheikh: boolean;
+  isBot?: boolean;
 }
 
 export interface Message {
@@ -41,12 +42,16 @@ export interface Room {
   votes: Record<string, string>;
   messages: Message[];
   eventsLog?: GameEvent[];
+  hostId: string;
+  phaseEndsAt: number;
+  firstNightDeathOccurred?: boolean;
+  firstVoteEliminationOccurred?: boolean;
   
   // Role specific choices for active user feedback
   mafiaTarget: string | null;
   muteTarget: string | null;
   doctorTarget: string | null;
   sniperTarget: string | null;
-  sniperHasShot: boolean;
+  sniperHasShot?: boolean;
   jokerChoice: "first_night_death" | "first_vote_elimination" | null;
 }

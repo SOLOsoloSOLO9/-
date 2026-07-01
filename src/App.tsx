@@ -27,6 +27,33 @@ import {
 import { Room, Player, Message } from "./types";
 import { audioSynth } from "./utils/audio";
 import { motion, AnimatePresence } from "motion/react";
+import { db, auth } from "./firebase";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import {
+  doc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  getDoc,
+  runTransaction,
+  arrayUnion,
+  collection,
+  getDocs,
+  writeBatch,
+  deleteDoc
+} from "firebase/firestore";
+import {
+  generateRoomCode,
+  generateId,
+  getFormattedTime,
+  distributeRoles,
+  resolveNightPhase,
+  resolveVotingPhase,
+  triggerBotNightActions,
+  triggerBotVoting,
+  getBotSpeechPrompt,
+  checkVictoryConditions
+} from "./utils/gameEngine";
 
 // Predefined Avatars mapping with elegant gradient backgrounds & themed emojis
 const AVATARS = [
@@ -62,9 +89,12 @@ function getRoleNameInArabic(role: string): string {
 }
 
 export default function App() {
-  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [ws, setWs] = useState<any>(null); // Kept for compatibility if references exist
   const [clientId, setClientId] = useState<string>("");
-  const [room, setRoom] = useState<Room | null>(null);
+  const [rawRoom, setRawRoom] = useState<Room | null>(null);
+  const [roomCode, setRoomCode] = useState<string>("");
+  const [myPrivateRole, setMyPrivateRole] = useState<string>("");
+  const [mafiaTeammates, setMafiaTeammates] = useState<string[]>([]);
   const [playerId, setPlayerId] = useState<string>("");
   const [nickname, setNickname] = useState<string>(() => localStorage.getItem("mafia_nickname") || "");
   const [roomCodeInput, setRoomCodeInput] = useState<string>("");
@@ -101,6 +131,9 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [lastReadCount, setLastReadCount] = useState(0);
 
+  // Timer states
+  const [secondsLeft, setSecondsLeft] = useState<number>(0);
+
   // Toast manager
   const addToast = (text: string, type: "info" | "success" | "danger" = "info") => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -109,6 +142,33 @@ export default function App() {
       setNotifications((prev) => prev.filter((toast) => toast.id !== id));
     }, 4000);
   };
+
+  // Derived room state with injected private role & teammate flags
+  const playersWithMyRole = useMemo(() => {
+    if (!rawRoom) return [];
+    return rawRoom.players.map(p => {
+      let role = p.role;
+      if (p.id === playerId && myPrivateRole) {
+        role = myPrivateRole;
+      }
+      if (myPrivateRole?.startsWith("mafia_") && mafiaTeammates.includes(p.id)) {
+        role = "mafia_team";
+      }
+      return {
+        ...p,
+        role
+      };
+    });
+  }, [rawRoom?.players, playerId, myPrivateRole, mafiaTeammates]);
+
+  const room = useMemo(() => {
+    if (!rawRoom) return null;
+    return {
+      ...rawRoom,
+      players: playersWithMyRole,
+      timer: secondsLeft, // Sync UI countdown display with secondsLeft state
+    };
+  }, [rawRoom, playersWithMyRole, secondsLeft]);
 
   // Copy code utility
   const copyRoomCode = () => {
@@ -120,168 +180,411 @@ export default function App() {
     }
   };
 
-  // Connect to server
+  const isHost = useMemo(() => {
+    if (!room) return false;
+    const me = room.players.find(p => p.id === playerId);
+    return me?.isHost || false;
+  }, [room, playerId]);
+
+  // Anonymous Sign In & Session setup
   useEffect(() => {
-    let socket: WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout;
-    let heartbeatInterval: NodeJS.Timeout;
-
-    const setupSocket = (activeSocket: WebSocket) => {
-      socket = activeSocket;
-      setConnStatus("connected");
-
-      // Start Heartbeat to keep connection active
-      heartbeatInterval = setInterval(() => {
-        if (activeSocket.readyState === WebSocket.OPEN) {
-          activeSocket.send(JSON.stringify({ type: "heartbeat" }));
-        }
-      }, 30000);
-
-      activeSocket.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          const { type, data } = parsed;
-
-          switch (type) {
-            case "connection_ack":
-              setClientId(data.clientId);
-              break;
-
-            case "room_state":
-              setRoom(data.room);
-              setPlayerId(data.playerId);
-              break;
-
-            case "sound":
-              if (soundEnabled) {
-                if (data.sound === "night_start") audioSynth.playNightStart();
-                else if (data.sound === "day_start") audioSynth.playDayStart();
-                else if (data.sound === "vote_submit") audioSynth.playVoteSubmit();
-                else if (data.sound === "timer_end") audioSynth.playTimerEnd();
-                else if (data.sound === "victory") audioSynth.playVictory();
-              }
-              break;
-
-            case "notification":
-              addToast(data.message, data.type);
-              break;
-
-            case "error":
-              addToast(data.message, "danger");
-              break;
-          }
-        } catch (err) {
-          console.error("Error parsing socket message", err);
-        }
-      };
-
-      activeSocket.onclose = () => {
+    setConnStatus("connecting");
+    signInAnonymously(auth)
+      .then(() => {
+        setConnStatus("connected");
+      })
+      .catch((err) => {
+        console.error("Auth failed:", err);
         setConnStatus("disconnected");
-        clearInterval(heartbeatInterval);
-        // Attempt reconnect after 3s if not fully destroyed
-        reconnectTimeout = setTimeout(() => {
-          connect();
-        }, 3000);
-      };
+        addToast("فشل في المصادقة مع خادم Firebase المجهول", "danger");
+      });
 
-      activeSocket.onerror = () => {
-        setConnStatus("disconnected");
-      };
-
-      setWs(activeSocket);
-    };
-
-    const connect = () => {
-      setConnStatus("connecting");
-      
-      // Compute WebSocket URL based on current host
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host;
-      
-      // If we are running in Capacitor (localhost or file://) or during local dev, use the deployed backend
-      const isLocalOrMobile = 
-        host.includes("localhost") || 
-        host.includes("127.0.0.1") || 
-        window.location.protocol === "file:" || 
-        !host.includes(".");
-
-      if (!isLocalOrMobile) {
-        // Direct connection when loaded from the web server itself
-        const wsUrl = `${protocol}//${host}`;
-        const wsSingle = new WebSocket(wsUrl);
-        setupSocket(wsSingle);
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setPlayerId(user.uid);
+        setClientId(user.uid);
+        setConnStatus("connected");
       } else {
-        // We are on a mobile device or local simulator
-        // Let's try both production and development backend environments simultaneously to find the active one!
-        const preUrl = "wss://ais-pre-snofsbk7ydeyygnwf4dboc-526192577065.europe-west2.run.app";
-        const devUrl = "wss://ais-dev-snofsbk7ydeyygnwf4dboc-526192577065.europe-west2.run.app";
-        
-        let resolved = false;
-        
-        const wsPre = new WebSocket(preUrl);
-        const wsDev = new WebSocket(devUrl);
-        
-        const cleanupTempSockets = (loser: WebSocket) => {
-          loser.onopen = null;
-          loser.onerror = null;
-          loser.onclose = null;
-          loser.close();
-        };
+        setConnStatus("disconnected");
+      }
+    });
 
-        wsPre.onopen = () => {
-          if (!resolved) {
-            resolved = true;
-            console.log("Connected to production backend (pre)!");
-            cleanupTempSockets(wsDev);
-            setupSocket(wsPre);
-          } else {
-            wsPre.close();
-          }
-        };
+    return () => unsubscribeAuth();
+  }, []);
 
-        wsDev.onopen = () => {
-          if (!resolved) {
-            resolved = true;
-            console.log("Connected to development backend (dev)!");
-            cleanupTempSockets(wsPre);
-            setupSocket(wsDev);
-          } else {
-            wsDev.close();
-          }
-        };
+  // Listen for Room state updates in Firestore
+  useEffect(() => {
+    if (!roomCode) {
+      setRawRoom(null);
+      return;
+    }
 
-        let failures = 0;
-        const handleFailure = (failedSocket: WebSocket) => {
-          failedSocket.onopen = null;
-          failedSocket.onerror = null;
-          failedSocket.onclose = null;
-          failedSocket.close();
-          
-          failures++;
-          if (failures >= 2 && !resolved) {
-            setConnStatus("disconnected");
-            // Schedule reconnect
-            reconnectTimeout = setTimeout(() => {
-              connect();
-            }, 3000);
-          }
-        };
+    const roomRef = doc(db, "rooms", roomCode);
+    const unsubscribeRoom = onSnapshot(roomRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data() as Room;
+        setRawRoom(data);
+      } else {
+        setRawRoom(null);
+        setRoomCode("");
+        addToast("تم إغلاق هذه الغرفة من قبل المضيف أو لم يتم العثور عليها", "danger");
+      }
+    }, (err) => {
+      console.error("Room snapshot error:", err);
+      addToast("خطأ في الاتصال بقاعدة البيانات اللحظية", "danger");
+    });
 
-        wsPre.onerror = () => handleFailure(wsPre);
-        wsPre.onclose = () => handleFailure(wsPre);
-        wsDev.onerror = () => handleFailure(wsDev);
-        wsDev.onclose = () => handleFailure(wsDev);
+    return () => unsubscribeRoom();
+  }, [roomCode]);
+
+  // Listen for Private Player Role updates in Firestore
+  useEffect(() => {
+    if (!roomCode || !playerId) {
+      setMyPrivateRole("");
+      setMafiaTeammates([]);
+      return;
+    }
+
+    const privRef = doc(db, "rooms", roomCode, "playersPrivate", playerId);
+    const unsubscribePriv = onSnapshot(privRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data) {
+          setMyPrivateRole(data.role || "");
+          setMafiaTeammates(data.mafiaTeammates || []);
+        }
+      } else {
+        setMyPrivateRole("");
+        setMafiaTeammates([]);
+      }
+    }, (err) => {
+      // Ignored - role is not assigned yet in early lobby
+    });
+
+    return () => unsubscribePriv();
+  }, [roomCode, playerId]);
+
+  // Handle phase transitions and play sound effects
+  useEffect(() => {
+    if (!room) return;
+
+    if (room.status !== prevStatus) {
+      if (soundEnabled) {
+        if (room.status === "night") audioSynth.playNightStart();
+        else if (room.status === "day") audioSynth.playDayStart();
+        else if (room.status === "voting") audioSynth.playDayStart();
+        else if (room.status === "game_over") audioSynth.playVictory();
+      }
+      setPrevStatus(room.status);
+    }
+  }, [room?.status, soundEnabled, prevStatus]);
+
+  // Self-healing host handover logic if there is no active host in the room
+  useEffect(() => {
+    if (!room || !roomCode || !playerId) return;
+
+    const activePlayers = room.players.filter(p => !p.isOffline);
+    const hasActiveHost = activePlayers.some(p => p.isHost);
+    
+    if (!hasActiveHost && activePlayers.length > 0 && activePlayers[0].id === playerId) {
+      const roomRef = doc(db, "rooms", roomCode);
+      const updatedPlayers = room.players.map(p => ({
+        ...p,
+        isHost: p.id === playerId ? true : p.isHost
+      }));
+      updateDoc(roomRef, {
+        players: updatedPlayers,
+        hostId: playerId
+      }).then(() => {
+        addToast("لقد أصبحت مضيف الغرفة الجديد لتولي إدارة اللعبة!", "success");
+      });
+    }
+  }, [room?.players, roomCode, playerId]);
+
+  // Timer countdown and host transition coordinator
+  useEffect(() => {
+    if (!room || !room.phaseEndsAt || room.status === "lobby" || room.status === "game_over") {
+      setSecondsLeft(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const msLeft = room.phaseEndsAt - Date.now();
+      const sec = Math.max(0, Math.ceil(msLeft / 1000));
+      setSecondsLeft(sec);
+
+      if (sec <= 0 && isHost) {
+        handlePhaseTimeout();
       }
     };
 
-    connect();
+    updateTimer();
+    const interval = setInterval(updateTimer, 500);
 
-    return () => {
-      if (socket) (socket as WebSocket).close();
-      clearTimeout(reconnectTimeout);
-      clearInterval(heartbeatInterval);
-    };
-  }, [soundEnabled]);
+    return () => clearInterval(interval);
+  }, [room?.phaseEndsAt, room?.status, isHost]);
+
+  // Trigger simulated bot night actions
+  const triggerHostBotNightActions = async (currentRoom: Room, privateRoles: Record<string, any>) => {
+    const bots = currentRoom.players.filter(p => p.isAlive && p.isBot);
+    if (bots.length === 0) return;
+
+    bots.forEach(bot => {
+      const delay = 3000 + Math.random() * 7000;
+      setTimeout(async () => {
+        const docSnap = await getDoc(doc(db, "rooms", roomCode));
+        if (!docSnap.exists()) return;
+        const latestRoom = docSnap.data() as Room;
+        if (latestRoom.status !== "night" || !latestRoom.players.find(p => p.id === bot.id)?.isAlive) return;
+
+        const actionUpdates = triggerBotNightActions(latestRoom, privateRoles);
+        if (Object.keys(actionUpdates).length > 0) {
+          await updateDoc(doc(db, "rooms", roomCode), actionUpdates);
+        }
+      }, delay);
+    });
+  };
+
+  // Trigger simulated bot voting actions
+  const triggerHostBotVoting = async (currentRoom: Room, privateRoles: Record<string, any>) => {
+    const bots = currentRoom.players.filter(p => p.isAlive && p.isBot);
+    if (bots.length === 0) return;
+
+    bots.forEach(bot => {
+      const delay = 2000 + Math.random() * 8000;
+      setTimeout(async () => {
+        const docSnap = await getDoc(doc(db, "rooms", roomCode));
+        if (!docSnap.exists()) return;
+        const latestRoom = docSnap.data() as Room;
+        if (latestRoom.status !== "voting" || !latestRoom.players.find(p => p.id === bot.id)?.isAlive) return;
+
+        const votes = triggerBotVoting(latestRoom, privateRoles);
+        await updateDoc(doc(db, "rooms", roomCode), { votes });
+      }, delay);
+    });
+  };
+
+  // Trigger AI-generated bot day speech
+  const triggerHostBotDaySpeech = async (currentRoom: Room, privateRoles: Record<string, any>) => {
+    const aliveBots = currentRoom.players.filter(p => p.isAlive && p.isBot);
+    if (aliveBots.length === 0) return;
+
+    const botsToSpeak = aliveBots.sort(() => 0.5 - Math.random()).slice(0, Math.min(aliveBots.length, 2));
+
+    botsToSpeak.forEach((bot, index) => {
+      const delay = (2 + Math.random() * 5) * 1000 + (index * 4000);
+      setTimeout(async () => {
+        const docSnap = await getDoc(doc(db, "rooms", roomCode));
+        if (!docSnap.exists()) return;
+        const latestRoom = docSnap.data() as Room;
+        if (latestRoom.status !== "day" || !latestRoom.players.find(p => p.id === bot.id)?.isAlive) return;
+
+        const botRole = privateRoles[bot.id]?.role || "citizen";
+        const prompt = getBotSpeechPrompt(bot, botRole, latestRoom, privateRoles);
+
+        let text = "";
+        const fallbacks = [
+          "أعتقد أن هناك شيئاً مريباً يحدث هنا... يجب أن نركز!",
+          "أنا مواطن بريء تماماً، أرجوكم لا تتسرعوا في الحكم.",
+          "من هو برأيكم المشبوه الأكبر في هذه الجولة؟",
+          "علينا أن نكون حذرين، المافيا تحاول تشتيتنا.",
+          "الشيخ هو من يستطيع كشف الحقيقة، دعونا ننتظر إشارته.",
+          "لماذا تلتزم الصمت يا صديقي؟ هذا يثير الشكوك!",
+          "أنا أثق بقرارات الدكتور، أتمنى أن يحمينا جميعاً.",
+          "التصويت العشوائي سيضر بمصلحة البلدة، فلنفكر جيداً.",
+          "المافيا بيننا... أشعر بوجودهم!"
+        ];
+
+        try {
+          const response = await fetch("/api/bot-speech", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt })
+          });
+          
+          if (response.ok) {
+            const parsed = await response.json();
+            if (parsed && parsed.message) {
+              text = parsed.message;
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to generate bot response using Gemini proxy, using local fallback:", err);
+        }
+
+        if (!text) {
+          text = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+        }
+
+        const newMessage: Message = {
+          id: Math.random().toString(36).substring(2, 9),
+          senderId: bot.id,
+          senderName: bot.nickname,
+          text: text.trim(),
+          time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+          isSystem: false,
+          isDeadChat: false,
+        };
+
+        await updateDoc(doc(db, "rooms", roomCode), {
+          messages: arrayUnion(newMessage)
+        });
+      }, delay);
+    });
+  };
+
+  // Host phase timeout executor
+  const handlePhaseTimeout = async () => {
+    if (!rawRoom || !roomCode) return;
+
+    const roomRef = doc(db, "rooms", roomCode);
+    const privDocs = await getDocs(collection(db, "rooms", roomCode, "playersPrivate"));
+    const privateRoles: Record<string, any> = {};
+    privDocs.forEach((doc) => {
+      privateRoles[doc.id] = doc.data();
+    });
+
+    if (rawRoom.status === "showing_roles") {
+      const nextEndsAt = Date.now() + 30 * 1000;
+      const updatedPlayers = rawRoom.players.map(p => ({ ...p, isMuted: false }));
+      
+      await updateDoc(roomRef, {
+        status: "night",
+        votes: {},
+        players: updatedPlayers,
+        nightOutcomeText: "",
+        voteOutcomeText: "",
+        mafiaTarget: null,
+        muteTarget: null,
+        doctorTarget: null,
+        sniperTarget: null,
+        phaseEndsAt: nextEndsAt,
+        messages: arrayUnion({
+          id: Math.random().toString(36).substring(2, 9),
+          senderId: null,
+          senderName: "النظام",
+          text: `🌙 حلّ الليل... الجولة ${rawRoom.round}. الجميع يغمض عينيه الآن.`,
+          time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+          isSystem: true,
+          isDeadChat: false,
+        })
+      });
+      
+      triggerHostBotNightActions(rawRoom, privateRoles);
+    } 
+    else if (rawRoom.status === "night") {
+      const { updatedRoom, updatedPrivateRoles } = resolveNightPhase(rawRoom, privateRoles);
+      const winner = checkVictoryConditions(updatedRoom);
+      
+      if (winner) {
+        const playersWithRoles = updatedRoom.players.map(p => ({
+          ...p,
+          role: updatedPrivateRoles[p.id]?.role || "citizen"
+        }));
+
+        await updateDoc(roomRef, {
+          ...updatedRoom,
+          players: playersWithRoles,
+          status: "game_over",
+          winner,
+          phaseEndsAt: 0,
+          messages: arrayUnion({
+            id: Math.random().toString(36).substring(2, 9),
+            senderId: null,
+            senderName: "النظام",
+            text: `🎉 انتهت اللعبة! فاز فريق ${winner === "mafia" ? "المافيا" : "الأهالي"}!`,
+            time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+            isSystem: true,
+            isDeadChat: false,
+          })
+        });
+      } else {
+        const nextEndsAt = Date.now() + rawRoom.dayDuration * 1000;
+        await updateDoc(roomRef, {
+          ...updatedRoom,
+          status: "day",
+          phaseEndsAt: nextEndsAt,
+        });
+
+        triggerHostBotDaySpeech(updatedRoom, updatedPrivateRoles);
+      }
+    } 
+    else if (rawRoom.status === "day") {
+      const nextEndsAt = Date.now() + 20 * 1000;
+      await updateDoc(roomRef, {
+        status: "voting",
+        votes: {},
+        phaseEndsAt: nextEndsAt,
+        messages: arrayUnion({
+          id: Math.random().toString(36).substring(2, 9),
+          senderId: null,
+          senderName: "النظام",
+          text: "⚖️ انتهى النقاش! تبدأ الآن مرحلة التصويت لاختيار الشخص المشتبه به. لديكم 20 ثانية.",
+          time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+          isSystem: true,
+          isDeadChat: false,
+        })
+      });
+
+      triggerHostBotVoting(rawRoom, privateRoles);
+    } 
+    else if (rawRoom.status === "voting") {
+      const { updatedRoom, updatedPrivateRoles } = resolveVotingPhase(rawRoom, privateRoles);
+      const winner = checkVictoryConditions(updatedRoom);
+      
+      if (winner) {
+        const playersWithRoles = updatedRoom.players.map(p => ({
+          ...p,
+          role: updatedPrivateRoles[p.id]?.role || "citizen"
+        }));
+
+        await updateDoc(roomRef, {
+          ...updatedRoom,
+          players: playersWithRoles,
+          status: "game_over",
+          winner,
+          phaseEndsAt: 0,
+          messages: arrayUnion({
+            id: Math.random().toString(36).substring(2, 9),
+            senderId: null,
+            senderName: "النظام",
+            text: `🎉 انتهت اللعبة! فاز فريق ${winner === "mafia" ? "المافيا" : "الأهالي"}!`,
+            time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+            isSystem: true,
+            isDeadChat: false,
+          })
+        });
+      } else {
+        const nextEndsAt = Date.now() + 30 * 1000;
+        const nextRoomState = {
+          ...updatedRoom,
+          round: updatedRoom.round + 1,
+          status: "night" as const,
+          phaseEndsAt: nextEndsAt,
+          votes: {},
+          mafiaTarget: null,
+          muteTarget: null,
+          doctorTarget: null,
+          sniperTarget: null,
+        };
+
+        await updateDoc(roomRef, {
+          ...nextRoomState,
+          messages: arrayUnion({
+            id: Math.random().toString(36).substring(2, 9),
+            senderId: null,
+            senderName: "النظام",
+            text: `🌙 حلّ الليل... الجولة ${nextRoomState.round}. الجميع يغمض عينيه الآن.`,
+            time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+            isSystem: true,
+            isDeadChat: false,
+          })
+        });
+
+        triggerHostBotNightActions(nextRoomState, updatedPrivateRoles);
+      }
+    }
+  };
 
   // Persist nickname
   useEffect(() => {
@@ -524,7 +827,7 @@ export default function App() {
   };
 
   // Handlers for client messages
-  const createRoom = (e: React.FormEvent) => {
+  const createRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nickname.trim()) {
       addToast("يرجى إدخال اسمك المستعار أولاً", "danger");
@@ -534,116 +837,529 @@ export default function App() {
       addToast("أقل مدة للنهار هي 30 ثانية", "danger");
       return;
     }
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "create_room",
-          data: { nickname, dayDuration },
-        })
-      );
+
+    try {
+      // Generate unique room code
+      const code = generateRoomCode();
+      const roomRef = doc(db, "rooms", code);
+
+      const newRoom: Room = {
+        code,
+        status: "lobby",
+        round: 0,
+        dayDuration,
+        timer: 0,
+        winner: null,
+        sniperHasShot: false,
+        players: [
+          {
+            id: playerId,
+            nickname: nickname.trim(),
+            avatarId: 1,
+            isHost: true,
+            isAlive: true,
+            isOffline: false,
+            role: "",
+            isMuted: false,
+            revealedSheikh: false,
+            isBot: false,
+          },
+        ],
+        votes: {},
+        messages: [
+          {
+            id: generateId(),
+            senderId: null,
+            senderName: "النظام",
+            text: `🏠 تم إنشاء الغرفة بنجاح! كود الغرفة الخاص بك هو ${code}. أرسله لأصدقائك للانضمام!`,
+            time: getFormattedTime(),
+            isSystem: true,
+            isDeadChat: false,
+          },
+        ],
+        eventsLog: [
+          {
+            id: generateId(),
+            icon: "🚪",
+            text: `🚪 أنشأ ${nickname.trim()} الغرفة.`,
+            time: getFormattedTime(),
+            round: 0,
+          },
+        ],
+        hostId: playerId,
+        jokerChoice: null,
+        mafiaTarget: null,
+        muteTarget: null,
+        doctorTarget: null,
+        sniperTarget: null,
+        phaseEndsAt: 0,
+        nightOutcomeText: "",
+        voteOutcomeText: "",
+      };
+
+      // Write public room state
+      await setDoc(roomRef, newRoom);
+
+      // Create private role document for player
+      const privateRef = doc(db, "rooms", code, "playersPrivate", playerId);
+      await setDoc(privateRef, { role: "", mafiaTeammates: [] });
+
+      setRoomCode(code);
       setShowCreateModal(false);
+      addToast("تم إنشاء الغرفة بنجاح!", "success");
+    } catch (err) {
+      console.error("Create room failed:", err);
+      addToast("حدث خطأ أثناء إنشاء الغرفة", "danger");
     }
   };
 
-  const joinRoom = (e: React.FormEvent) => {
+  const joinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nickname.trim()) {
       addToast("يرجى إدخال اسمك المستعار أولاً", "danger");
       return;
     }
-    if (!roomCodeInput.trim()) {
+    const targetCode = roomCodeInput.trim().toUpperCase();
+    if (!targetCode) {
       addToast("يرجى إدخال كود الغرفة", "danger");
       return;
     }
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "join_room",
-          data: { nickname, roomCode: roomCodeInput.trim() },
-        })
-      );
+
+    try {
+      const roomRef = doc(db, "rooms", targetCode);
+
+      await runTransaction(db, async (transaction) => {
+        const roomDoc = await transaction.get(roomRef);
+        if (!roomDoc.exists()) {
+          throw new Error("not_found");
+        }
+
+        const roomData = roomDoc.data() as Room;
+        if (roomData.status !== "lobby") {
+          throw new Error("already_started");
+        }
+
+        if (roomData.players.length >= 18) {
+          throw new Error("room_full");
+        }
+
+        const playerExists = roomData.players.some((p) => p.id === playerId);
+        let updatedPlayers = [...roomData.players];
+
+        if (!playerExists) {
+          const newPlayer: Player = {
+            id: playerId,
+            nickname: nickname.trim(),
+            avatarId: (roomData.players.length % 8) + 1,
+            isHost: false,
+            isAlive: true,
+            isOffline: false,
+            role: "",
+            isMuted: false,
+            revealedSheikh: false,
+            isBot: false,
+          };
+          updatedPlayers.push(newPlayer);
+        } else {
+          // Reconnecting / joining again - mark as online
+          updatedPlayers = updatedPlayers.map((p) =>
+            p.id === playerId ? { ...p, isOffline: false, nickname: nickname.trim() } : p
+          );
+        }
+
+        const newSystemMessage = {
+          id: generateId(),
+          senderId: null,
+          senderName: "النظام",
+          text: `👋 انضم اللاعب ${nickname.trim()} إلى الغرفة!`,
+          time: getFormattedTime(),
+          isSystem: true,
+          isDeadChat: false,
+        };
+
+        const newEvent = {
+          id: generateId(),
+          icon: "👋",
+          text: `👋 انضم اللاعب ${nickname.trim()} إلى الغرفة!`,
+          time: getFormattedTime(),
+          round: roomData.round || 0,
+        };
+
+        transaction.update(roomRef, {
+          players: updatedPlayers,
+          messages: [...roomData.messages, newSystemMessage],
+          eventsLog: [...(roomData.eventsLog || []), newEvent],
+        });
+      });
+
+      // Create private role document for player
+      const privateRef = doc(db, "rooms", targetCode, "playersPrivate", playerId);
+      await setDoc(privateRef, { role: "", mafiaTeammates: [] });
+
+      setRoomCode(targetCode);
       setShowJoinModal(false);
+      addToast("تم الانضمام للغرفة اللحظية بنجاح!", "success");
+    } catch (err: any) {
+      console.error("Join room failed:", err);
+      if (err.message === "not_found") {
+        addToast("كود الغرفة غير موجود أو خاطئ", "danger");
+      } else if (err.message === "already_started") {
+        addToast("لا يمكن الانضمام للغرفة حالياً، اللعبة بدأت بالفعل", "danger");
+      } else if (err.message === "room_full") {
+        addToast("الغرفة ممتلئة بالكامل بالحد الأقصى (18 لاعب)", "danger");
+      } else {
+        addToast("حدث خطأ أثناء الانضمام للغرفة", "danger");
+      }
     }
   };
 
-  const startGame = () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "start_game" }));
+  const startGame = async () => {
+    if (!room || !roomCode) return;
+    if (room.players.length < 7) {
+      addToast("تحتاج إلى 7 لاعبين على الأقل لبدء المباراة", "danger");
+      return;
+    }
+
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+
+      // Distribute roles
+      const { updatedPlayers, privateRoles } = distributeRoles(room.players);
+
+      // Create batch to write private roles
+      const batch = writeBatch(db);
+      Object.entries(privateRoles).forEach(([pId, pPriv]) => {
+        const privRef = doc(db, "rooms", roomCode, "playersPrivate", pId);
+        batch.set(privRef, pPriv);
+      });
+      await batch.commit();
+
+      const nextEndsAt = Date.now() + 10 * 1000; // 10 seconds to show roles
+
+      await updateDoc(roomRef, {
+        status: "showing_roles",
+        round: 1,
+        players: updatedPlayers,
+        votes: {},
+        phaseEndsAt: nextEndsAt,
+        messages: arrayUnion({
+          id: generateId(),
+          senderId: null,
+          senderName: "النظام",
+          text: "🏁 بدأت اللعبة! جاري توزيع الأدوار والبطاقات سرياً... تحقق من بطاقتك الآن!",
+          time: getFormattedTime(),
+          isSystem: true,
+          isDeadChat: false,
+        }),
+        eventsLog: arrayUnion({
+          id: generateId(),
+          icon: "🏁",
+          text: "🏁 بدأت اللعبة وتم توزيع الأدوار سراً على الجميع.",
+          time: getFormattedTime(),
+          round: 1,
+        }),
+      });
+
+      addToast("تم توزيع الأدوار وبدء المباراة اللحظية بنجاح!", "success");
+    } catch (err) {
+      console.error("Start game failed:", err);
+      addToast("حدث خطأ أثناء توزيع الأدوار وبدء اللعبة", "danger");
     }
   };
 
-  const selectJokerChoice = (choice: "first_night_death" | "first_vote_elimination") => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "joker_choice", data: { choice } }));
+  const selectJokerChoice = async (choice: "first_night_death" | "first_vote_elimination") => {
+    if (!room || !roomCode) return;
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+      await updateDoc(roomRef, {
+        jokerChoice: choice,
+      });
+      addToast("تم تسجيل اختيار الجوكر بنجاح سراً", "success");
+    } catch (err) {
+      console.error("Joker choice failed:", err);
+      addToast("فشل في تعيين خيار الجوكر", "danger");
     }
   };
 
-  const submitNightAction = (actionType: "kill" | "mute" | "protect" | "shoot", targetId: string | null) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "submit_night_action",
-          data: { actionType, targetId },
-        })
+  const submitNightAction = async (actionType: "kill" | "mute" | "protect" | "shoot", targetId: string | null) => {
+    if (!room || !roomCode) return;
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+      const updates: any = {};
+      if (actionType === "kill") updates.mafiaTarget = targetId;
+      else if (actionType === "mute") updates.muteTarget = targetId;
+      else if (actionType === "protect") updates.doctorTarget = targetId;
+      else if (actionType === "shoot") updates.sniperTarget = targetId;
+
+      await updateDoc(roomRef, updates);
+      
+      // Local visual confirmation sound
+      if (soundEnabled) audioSynth.playVoteSubmit();
+      addToast("تم تسجيل اختيارك الليلي بنجاح", "success");
+    } catch (err) {
+      console.error("Submit action failed:", err);
+      addToast("فشل في تقديم الفعل الليلي", "danger");
+    }
+  };
+
+  const submitVote = async (targetId: string) => {
+    if (!room || !roomCode) return;
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+      const newVotes = { ...room.votes, [playerId]: targetId };
+      await updateDoc(roomRef, {
+        votes: newVotes,
+      });
+
+      if (soundEnabled) audioSynth.playVoteSubmit();
+      addToast("تم تسجيل صوتك بنجاح!", "success");
+    } catch (err) {
+      console.error("Submit vote failed:", err);
+      addToast("حدث خطأ في تسجيل صوتك", "danger");
+    }
+  };
+
+  const sheikhReveal = async () => {
+    if (!room || !roomCode) return;
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+      const updatedPlayers = room.players.map((p) =>
+        p.id === playerId ? { ...p, revealedSheikh: true } : p
       );
+
+      await updateDoc(roomRef, {
+        players: updatedPlayers,
+        messages: arrayUnion({
+          id: generateId(),
+          senderId: null,
+          senderName: "النظام",
+          text: `👳 كشف الشيخ ${nickname} عن هويته الحقيقية للجميع! أصوات الشيخ الآن تُحسب بثلاثة أضعاف!`,
+          time: getFormattedTime(),
+          isSystem: true,
+          isDeadChat: false,
+        }),
+        eventsLog: arrayUnion({
+          id: generateId(),
+          icon: "👳",
+          text: `👳 كشف الشيخ ${nickname} عن نفسه للبلدة.`,
+          time: getFormattedTime(),
+          round: room?.round || 0,
+        }),
+      });
+
+      addToast("لقد كشفت هويتك الحقيقية لجميع اللاعبين!", "success");
+    } catch (err) {
+      console.error("Sheikh reveal failed:", err);
+      addToast("حدث خطأ أثناء محاولة كشف هويتك", "danger");
     }
   };
 
-  const submitVote = (targetId: string) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "submit_vote",
-          data: { targetId },
-        })
-      );
-    }
-  };
-
-  const sheikhReveal = () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "sheikh_reveal" }));
-    }
-  };
-
-  const sendChatMessage = (e: React.FormEvent) => {
+  const sendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatMessage.trim()) return;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "send_message",
-          data: { text: chatMessage },
-        })
-      );
+    if (!chatMessage.trim() || !room || !roomCode) return;
+
+    try {
+      const isDead = me?.isAlive === false;
+      const newMessage: Message = {
+        id: generateId(),
+        senderId: playerId,
+        senderName: nickname,
+        text: chatMessage.trim(),
+        time: getFormattedTime(),
+        isSystem: false,
+        isDeadChat: isDead,
+      };
+
+      const roomRef = doc(db, "rooms", roomCode);
+      await updateDoc(roomRef, {
+        messages: arrayUnion(newMessage),
+      });
+
       setChatMessage("");
+    } catch (err) {
+      console.error("Send message failed:", err);
+      addToast("فشل إرسال الرسالة", "danger");
     }
   };
 
-  const restartGame = () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "restart_game" }));
+  const restartGame = async () => {
+    if (!room || !roomCode) return;
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+
+      // Reset players lists
+      const resetPlayers = room.players.map((p) => ({
+        ...p,
+        isAlive: true,
+        isMuted: false,
+        revealedSheikh: false,
+        role: "",
+      }));
+
+      // Delete all private roles in a batch to keep things completely pristine
+      const privDocs = await getDocs(collection(db, "rooms", roomCode, "playersPrivate"));
+      const batch = writeBatch(db);
+      privDocs.forEach((doc) => {
+        batch.set(doc.ref, { role: "", mafiaTeammates: [] });
+      });
+      await batch.commit();
+
+      await updateDoc(roomRef, {
+        status: "lobby",
+        round: 0,
+        winner: null,
+        votes: {},
+        players: resetPlayers,
+        nightOutcomeText: "",
+        voteOutcomeText: "",
+        jokerChoice: null,
+        mafiaTarget: null,
+        muteTarget: null,
+        doctorTarget: null,
+        sniperTarget: null,
+        phaseEndsAt: 0,
+        messages: [
+          {
+            id: generateId(),
+            senderId: null,
+            senderName: "النظام",
+            text: "🔄 تمت إعادة ضبط اللعبة بنجاح من قبل المضيف وهي جاهزة لبدء جولة جديدة الآن!",
+            time: getFormattedTime(),
+            isSystem: true,
+            isDeadChat: false,
+          },
+        ],
+        eventsLog: [
+          {
+            id: generateId(),
+            icon: "🔄",
+            text: "🔄 تمت إعادة ضبط اللعبة لجولة جديدة.",
+            time: getFormattedTime(),
+            round: 0,
+          },
+        ],
+      });
+
+      addToast("تمت إعادة ضبط اللعبة اللحظية بنجاح جولة جديدة!", "success");
+    } catch (err) {
+      console.error("Restart game failed:", err);
+      addToast("فشل في إعادة ضبط اللعبة", "danger");
     }
   };
 
-  const addBot = () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "add_bot" }));
+  const addBot = async () => {
+    if (!room || !roomCode) return;
+    if (room.players.length >= 18) {
+      addToast("الغرفة ممتلئة بالكامل، لا يمكن إضافة روبوتات", "danger");
+      return;
+    }
+
+    const botNames = ["حمد", "فيصل", "خالد", "سارة", "عبدالعزيز", "نورة", "فهد", "ريم", "مساعد", "جواهر"];
+    // Choose a bot name not in the room
+    const existingNames = room.players.map((p) => p.nickname);
+    const availableNames = botNames.filter((name) => !existingNames.includes(name));
+    const botName = availableNames[Math.floor(Math.random() * availableNames.length)] || `بوت_${generateId().substring(0, 3)}`;
+
+    const botId = `bot_${generateId()}`;
+    const botPlayer: Player = {
+      id: botId,
+      nickname: botName,
+      avatarId: Math.floor(Math.random() * 8) + 1,
+      isHost: false,
+      isAlive: true,
+      isOffline: false,
+      role: "",
+      isMuted: false,
+      revealedSheikh: false,
+      isBot: true,
+    };
+
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+      await updateDoc(roomRef, {
+        players: [...room.players, botPlayer],
+        messages: arrayUnion({
+          id: generateId(),
+          senderId: null,
+          senderName: "النظام",
+          text: `🤖 انضم الروبوت الذكي ${botName} إلى الغرفة!`,
+          time: getFormattedTime(),
+          isSystem: true,
+          isDeadChat: false,
+        }),
+      });
+
+      // Create blank private record
+      await setDoc(doc(db, "rooms", roomCode, "playersPrivate", botId), { role: "", mafiaTeammates: [] });
+
+      addToast("تمت إضافة الروبوت الذكي للغرفة بنجاح!", "success");
+    } catch (err) {
+      console.error("Add bot failed:", err);
+      addToast("فشل في إضافة الروبوت", "danger");
     }
   };
 
-  const leaveRoom = () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "leave_room" }));
+  const leaveRoom = async () => {
+    if (!room || !roomCode) {
+      setRoomCode("");
+      return;
     }
-    setRoom(null);
-    setRoomCodeInput("");
-    addToast("غادرت الغرفة بنجاح", "info");
+
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+      const isMeHost = me?.isHost;
+      const filteredPlayers = room.players.filter((p) => p.id !== playerId);
+
+      if (filteredPlayers.length === 0) {
+        // Room empty, delete room
+        await deleteDoc(roomRef);
+      } else {
+        // Handover host if I am leaving
+        if (isMeHost) {
+          const nextActiveHost = filteredPlayers.find(p => !p.isOffline && !p.isBot) || filteredPlayers[0];
+          nextActiveHost.isHost = true;
+          
+          await updateDoc(roomRef, {
+            players: filteredPlayers.map(p => p.id === nextActiveHost.id ? { ...p, isHost: true } : p),
+            hostId: nextActiveHost.id,
+            messages: arrayUnion({
+              id: generateId(),
+              senderId: null,
+              senderName: "النظام",
+              text: `🚪 غادر المضيف ${nickname}. المضيف الجديد للغرفة هو ${nextActiveHost.nickname}.`,
+              time: getFormattedTime(),
+              isSystem: true,
+              isDeadChat: false,
+            })
+          });
+        } else {
+          await updateDoc(roomRef, {
+            players: filteredPlayers,
+            messages: arrayUnion({
+              id: generateId(),
+              senderId: null,
+              senderName: "النظام",
+              text: `🚪 غادر اللاعب ${nickname} الغرفة.`,
+              time: getFormattedTime(),
+              isSystem: true,
+              isDeadChat: false,
+            })
+          });
+        }
+      }
+
+      // Cleanup local room code
+      setRoomCode("");
+      setRoomCodeInput("");
+      addToast("غادرت الغرفة بنجاح", "info");
+    } catch (err) {
+      console.error("Leave room failed:", err);
+      addToast("فشل في مغادرة الغرفة", "danger");
+    }
   };
 
   // Find player representation of current client
   const me = room?.players.find((p) => p.id === playerId);
-  const isHost = me?.isHost || false;
   const isAlive = me?.isAlive || false;
 
   // Render Helpers

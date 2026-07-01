@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rooms/{roomCode} {
+      allow read, write: if true;
+      
+      match /playersPrivate/{playerId} {
+        allow read: if request.auth != null && (
+          request.auth.uid == playerId || 
+          request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostId
+        );
+        allow write: if true;
+      }
+    }
+  }
+}
