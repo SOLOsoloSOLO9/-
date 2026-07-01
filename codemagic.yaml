@@ -25,10 +25,24 @@ workflows:
       - name: Capacitor Sync Assets
         script: |
           npx cap sync android
-      - name: Set permissions for Gradle Wrapper
+      - name: Fix and Configure Gradle Wrapper
         script: |
-          cd android
-          chmod +x gradlew
+          # 1. Detect Gradle version and download a fresh, uncorrupted wrapper jar
+          GRADLE_VERSION=$(grep -oE 'gradle-[0-9]+\.[0-9]+(\.[0-9]+)?' android/gradle/wrapper/gradle-wrapper.properties | head -n 1 | cut -d'-' -f2)
+          echo "Detected Gradle version from properties: $GRADLE_VERSION"
+          if [ -n "$GRADLE_VERSION" ]; then
+            echo "Downloading clean gradle-wrapper.jar for version $GRADLE_VERSION..."
+            curl -L -o android/gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/gradle/gradle/v$GRADLE_VERSION/gradle/wrapper/gradle-wrapper.jar"
+          else
+            echo "Could not detect Gradle version. Downloading fallback version 8.14.3..."
+            curl -L -o android/gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/gradle/gradle/v8.14.3/gradle/wrapper/gradle-wrapper.jar"
+          fi
+          
+          # 2. Fix Windows carriage return line endings (\r) in gradlew if edited on Windows
+          sed -i 's/\r$//' android/gradlew
+          
+          # 3. Set executable permission for gradlew
+          chmod +x android/gradlew
       - name: Build Android APK
         script: |
           cd android
