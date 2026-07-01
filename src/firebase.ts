@@ -1,21 +1,19 @@
 import { initializeApp } from "firebase/app";
-import { initializeFirestore } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC7rn39XINhlSaoq2qpMbFv42CjPI5AbuE",
-  authDomain: "mesmerizing-arena-ncwq9.firebaseapp.com",
-  projectId: "mesmerizing-arena-ncwq9",
-  storageBucket: "mesmerizing-arena-ncwq9.firebasestorage.app",
-  messagingSenderId: "867923003703",
-  appId: "1:867923003703:web:29585a74b35f0044f532b2"
+  apiKey: "AIzaSyDzn52Q9N7YrQnwb8e2sZBrrYlITc1W2EM",
+  authDomain: "mafyaa-7d6db.firebaseapp.com",
+  projectId: "mafyaa-7d6db",
+  storageBucket: "mafyaa-7d6db.firebasestorage.app",
+  messagingSenderId: "98422478965",
+  appId: "1:98422478965:web:91522b74dc4bdc25af803c",
+  measurementId: "G-WP07JCP42N"
 };
 
 const app = initializeApp(firebaseConfig);
-
-// Initialize Firestore with the custom database ID specified in the configuration
-const db = initializeFirestore(app, {}, "ai-studio-df6de123-526d-4f42-a470-bc1f9ee95519");
-
+const db = getFirestore(app);
 const auth = getAuth(app);
 
 export { app, db, auth };
