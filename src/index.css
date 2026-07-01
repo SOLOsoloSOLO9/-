@@ -1,0 +1,182 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Cairo", system-ui, -apple-system, sans-serif;
+}
+
+html, body, #root {
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  direction: rtl;
+  text-align: right;
+  background-color: #100C08;
+  color: #ffffff;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(16, 12, 8, 0.4);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(149, 18, 44, 0.35);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(149, 18, 44, 0.75);
+}
+
+/* Premium Keyframe Animations for Alive / Atmospheric Effects */
+@keyframes fogDrift1 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate(60px, -40px) scale(1.15) rotate(4deg);
+  }
+  66% {
+    transform: translate(-30px, 30px) scale(0.9) rotate(-3deg);
+  }
+}
+
+@keyframes fogDrift2 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1.1) rotate(0deg);
+  }
+  50% {
+    transform: translate(-50px, 50px) scale(0.85) rotate(-6deg);
+  }
+}
+
+@keyframes ambientGlow {
+  0%, 100% {
+    opacity: 0.12;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.22;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes radialPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(149, 18, 44, 0.2), inset 0 0 10px rgba(149, 18, 44, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(149, 18, 44, 0.45), inset 0 0 18px rgba(149, 18, 44, 0.25);
+  }
+}
+
+/* Glassmorphism Surface Designs */
+.glass-surface {
+  background: rgba(16, 12, 8, 0.55);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-surface-elevated {
+  background: rgba(20, 16, 12, 0.8);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 65px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.05);
+}
+
+.glass-surface-red {
+  background: rgba(149, 18, 44, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(149, 18, 44, 0.25);
+}
+
+/* Premium Buttons */
+.btn-primary {
+  background: linear-gradient(135deg, #95122c 0%, #680c1d 100%);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  box-shadow: 0 6px 22px rgba(149, 18, 44, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b21635 0%, #7c0e21 100%);
+  border-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 10px 32px rgba(149, 18, 44, 0.55), inset 0 1px 1.5px rgba(255, 255, 255, 0.25);
+  transform: translateY(-1.5px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0.5px);
+  box-shadow: 0 3px 12px rgba(149, 18, 44, 0.25);
+}
+
+/* Noise overlay pattern for texture */
+.noise-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.022;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   MOBILE & CAPACITOR NATIVE WEBVIEW OPTIMIZATIONS (DARK MODE PERSISTED)
+   ========================================================================== */
+* {
+  /* Disable tap highlight box inside mobile devices */
+  -webkit-tap-highlight-color: transparent;
+  /* Disable default context menu overlay on long press in iOS/Android */
+  -webkit-touch-callout: none;
+  box-sizing: border-box;
+}
+
+/* Prevent elastic scroll / swipe-to-back bouncing in iOS WebView for perfect full screen */
+html, body, #root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  /* Disable selection of regular texts and headers on phones */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Re-enable selection specifically for text inputs, logs, and codes to make them copyable */
+input, textarea, select, [contenteditable="true"], .selectable-text {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+/* Smooth kinetic scrolling for lists like chat, player cards, and event logs */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Avoid zooming on iOS when inputs are focused */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "لعبة المافيا",
+  "description": "لعبة مافيا اجتماعية تفاعلية جماعية باللغة العربية مع تحديثات لحظية وتصميم فخم وعصري.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

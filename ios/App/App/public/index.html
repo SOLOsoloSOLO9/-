@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#100C08" />
+    <title>لعبة المافيا</title>
+    <script type="module" crossorigin src="/assets/index-BHRFJzzl.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-jpCWtgce.css">
+  </head>
+  <body>
+    <!-- Fallback/Transition Splash Screen -->
+    <div id="app-splash" style="
+      position: fixed;
+      inset: 0;
+      background-color: #100C08;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+      transition: opacity 0.5s ease-out;
+      font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+      direction: rtl;
+    ">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 24px;">
+        <!-- Logo Icon -->
+        <div style="
+          width: 96px;
+          height: 96px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #95122c 0%, #680c1d 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 42px;
+          box-shadow: 0 0 40px rgba(149, 18, 44, 0.65);
+          animation: logo-glowing 2s infinite ease-in-out;
+          border: 1px solid rgba(239, 68, 68, 0.2);
+        ">
+          🕵️‍♂️
+        </div>
+        
+        <!-- App Title -->
+        <div style="text-align: center;">
+          <h1 style="
+            color: #ffffff;
+            font-size: 30px;
+            font-weight: 800;
+            margin: 0;
+            letter-spacing: -0.5px;
+            text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+          ">لعبة المافيا</h1>
+          <p style="
+            color: #ef4444;
+            font-size: 11px;
+            font-weight: 700;
+            margin: 4px 0 0 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            opacity: 0.8;
+          ">غموض وإثارة ومواجهة</p>
+        </div>
+        
+        <!-- Subtitle/Spinner -->
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px; background: rgba(255,255,255,0.03); padding: 8px 16px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.05);">
+          <div style="
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-top-color: #ef4444;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+          "></div>
+          <span style="color: #d6d3d1; font-size: 12px; font-weight: 700;">جاري تحميل نظام اللعبة...</span>
+        </div>
+      </div>
+    </div>
+    
+    <style>
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      @keyframes logo-glowing {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 30px rgba(149, 18, 44, 0.5); }
+        50% { transform: scale(1.04); box-shadow: 0 0 55px rgba(149, 18, 44, 0.85); }
+      }
+    </style>
+
+    <div id="root"></div>
+  </body>
+</html>
+
