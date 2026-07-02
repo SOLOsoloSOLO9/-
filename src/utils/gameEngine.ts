@@ -68,13 +68,17 @@ export function addGameEvent(events: GameEvent[], icon: string, text: string, ro
   return [...(events || []), newEvent];
 }
 
-export function checkVictoryConditions(room: Room): "citizens" | "mafia" | null {
+export function checkVictoryConditions(
+  room: Room,
+  privateRoles?: Record<string, PlayerPrivate>
+): "citizens" | "mafia" | null {
   const alivePlayers = room.players.filter((p) => p.isAlive);
   
-  // Count how many are mafia
-  const mafiaAlive = alivePlayers.filter(
-    (p) => p.role.startsWith("mafia_")
-  ).length;
+  // Count how many are mafia using privateRoles mapping, with fallback to public role
+  const mafiaAlive = alivePlayers.filter((p) => {
+    const role = privateRoles?.[p.id]?.role || p.role;
+    return role && role.startsWith("mafia_");
+  }).length;
 
   const citizensAlive = alivePlayers.length - mafiaAlive;
 
@@ -280,6 +284,42 @@ export function resolveNightPhase(
     events = addGameEvent(events, "☀️", "استيقظت المدينة ولم يمت أحد هذه الليلة.", room.round);
   }
 
+  // 8. Debug Logs Integration as requested
+  const muterName = activeMuter ? activeMuter.nickname : "لا أحد";
+  const muteTargetName = room.muteTarget ? (players.find(p => p.id === room.muteTarget)?.nickname || "غير معروف") : "لا أحد";
+  const killerName = activeKiller ? activeKiller.nickname : "لا أحد";
+  const killTargetName = room.mafiaTarget ? (players.find(p => p.id === room.mafiaTarget)?.nickname || "غير معروف") : "لا أحد";
+  const docName = activeDoctor ? activeDoctor.nickname : "لا أحد";
+  const docTargetName = room.doctorTarget ? (players.find(p => p.id === room.doctorTarget)?.nickname || "غير معروف") : "لا أحد";
+  const prevDocTargetName = room.prevDoctorTarget ? (players.find(p => p.id === room.prevDoctorTarget)?.nickname || "غير معروف") : "لا أحد";
+  const sniperName = activeSniper ? activeSniper.nickname : "لا أحد";
+  const sniperTargetName = room.sniperTarget ? (players.find(p => p.id === room.sniperTarget)?.nickname || "غير معروف") : "لا أحد";
+  const deadName = deadPlayer ? (deadPlayer as Player).nickname : "لا أحد";
+
+  let debugLog = `🔧 [سجل المطور - تفاصيل معالجة الليل - الجولة ${room.round}]:\n`;
+  debugLog += `🔹 التسكيت: المُسكِّت [${muterName}] ➔ المستهدف [${muteTargetName}]\n`;
+  debugLog += `🔹 محاولة القتل: القاتل [${killerName}] ➔ المستهدف [${killTargetName}]\n`;
+  debugLog += `🔹 الطبيب: الحامي [${docName}] ➔ المحمي [${docTargetName}] (المحمي السابق: [${prevDocTargetName}])\n`;
+  debugLog += `🔹 القناص: القنّاص [${sniperName}] ➔ المقنوص [${sniperTargetName}]\n`;
+  debugLog += `🔹 الحصيلة النهائية: الضحية المصابة هي [${deadName}]\n`;
+
+  // Count live players for debugging victory state
+  const alivePlayers = players.filter((p) => p.isAlive);
+  const mafiaAlive = alivePlayers.filter((p) => updatedPrivate[p.id]?.role.startsWith("mafia_")).length;
+  const citizensAlive = alivePlayers.length - mafiaAlive;
+  
+  debugLog += `📊 فحص النصر: المافيا الأحياء = ${mafiaAlive} | المواطنين الأحياء = ${citizensAlive}\n`;
+  if (mafiaAlive === 0) {
+    debugLog += `🏆 النتيجة: فوز ساحق للمواطنين (تم القضاء على جميع أفراد المافيا!)`;
+  } else if (mafiaAlive >= citizensAlive) {
+    debugLog += `🏆 النتيجة: فوز ساحق للمافيا (تساوى العدد أو زاد عن عدد المواطنين!)`;
+  } else {
+    debugLog += `🎮 النتيجة: استمرار اللعب، لم يتحقق شرط الفوز بعد.`;
+  }
+
+  console.log(debugLog);
+  messages = addSystemMessage(messages, debugLog);
+
   const nextStatus = "day";
 
   const updatedRoom: Room = {
@@ -292,7 +332,8 @@ export function resolveNightPhase(
     votes: {},
     mafiaTarget: null,
     muteTarget: null,
-    doctorTarget: null,
+    prevDoctorTarget: room.doctorTarget, // Save current target to prevDoctorTarget for the next round
+    doctorTarget: null, // Reset doctor's selection for the next round
     sniperTarget: null,
     sniperHasShot: room.sniperTarget ? true : room.sniperHasShot,
   };
@@ -386,6 +427,46 @@ export function resolveVotingPhase(
     messages = addSystemMessage(messages, "⚖️ تعادل في التصويت! لم يتفق أهالي المدينة على طرد أحد.");
     events = addGameEvent(events, "⚖️", "انتهى التصويت بالتعادل، ولم يتم إقصاء أي لاعب.", room.round);
   }
+
+  // Build developer debug logs for the voting phase
+  let debugLog = `🔧 [سجل المطور - تفاصيل معالجة التصويت - الجولة ${room.round}]:\n`;
+  debugLog += `🔹 توزيع أصوات اللاعبين:\n`;
+  Object.entries(room.votes).forEach(([voterId, votedId]) => {
+    const voter = players.find(p => p.id === voterId);
+    const voted = players.find(p => p.id === votedId);
+    if (voter && voted) {
+      const isSheikh = updatedPrivate[voterId]?.role === "sheikh";
+      const voteWeight = isSheikh && voter.revealedSheikh ? 3 : 1;
+      debugLog += `  * [${voter.nickname}] صوّت ضد [${voted.nickname}] (وزن الصوت: ${voteWeight})\n`;
+    }
+  });
+
+  debugLog += `🔹 إجمالي الأصوات المستلمة:\n`;
+  Object.entries(voteTally).forEach(([id, votes]) => {
+    const p = players.find(player => player.id === id);
+    if (p) {
+      debugLog += `  * [${p.nickname}] ➔ ${votes} أصوات\n`;
+    }
+  });
+
+  debugLog += `🔹 النتيجة النهائية للتصويت: [${eliminatedPlayer ? (eliminatedPlayer as Player).nickname : "تعادل/لم يتم طرد أحد"}]\n`;
+
+  // Count live players for debugging victory state
+  const alivePlayersAfterVote = players.filter((p) => p.isAlive);
+  const mafiaAliveAfterVote = alivePlayersAfterVote.filter((p) => updatedPrivate[p.id]?.role.startsWith("mafia_")).length;
+  const citizensAliveAfterVote = alivePlayersAfterVote.length - mafiaAliveAfterVote;
+
+  debugLog += `📊 فحص النصر بعد التصويت: المافيا الأحياء = ${mafiaAliveAfterVote} | المواطنين الأحياء = ${citizensAliveAfterVote}\n`;
+  if (mafiaAliveAfterVote === 0) {
+    debugLog += `🏆 النتيجة: فوز ساحق للمواطنين (تم القضاء على جميع أفراد المافيا!)`;
+  } else if (mafiaAliveAfterVote >= citizensAliveAfterVote) {
+    debugLog += `🏆 النتيجة: فوز ساحق للمافيا (تساوى العدد أو زاد عن عدد المواطنين!)`;
+  } else {
+    debugLog += `🎮 النتيجة: استمرار اللعب، لم يتحقق شرط الفوز بعد.`;
+  }
+
+  console.log(debugLog);
+  messages = addSystemMessage(messages, debugLog);
 
   const updatedRoom: Room = {
     ...room,

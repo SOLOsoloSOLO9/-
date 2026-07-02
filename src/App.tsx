@@ -133,6 +133,7 @@ export default function App() {
 
   // Timer states
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
+  const lastProcessedTransitionRef = useRef<string>("");
 
   // Toast manager
   const addToast = (text: string, type: "info" | "success" | "danger" = "info") => {
@@ -150,8 +151,7 @@ export default function App() {
       let role = p.role;
       if (p.id === playerId && myPrivateRole) {
         role = myPrivateRole;
-      }
-      if (myPrivateRole?.startsWith("mafia_") && mafiaTeammates.includes(p.id)) {
+      } else if (myPrivateRole?.startsWith("mafia_") && mafiaTeammates.includes(p.id)) {
         role = "mafia_team";
       }
       return {
@@ -437,152 +437,163 @@ export default function App() {
   const handlePhaseTimeout = async () => {
     if (!rawRoom || !roomCode) return;
 
-    const roomRef = doc(db, "rooms", roomCode);
-    const privDocs = await getDocs(collection(db, "rooms", roomCode, "playersPrivate"));
-    const privateRoles: Record<string, any> = {};
-    privDocs.forEach((doc) => {
-      privateRoles[doc.id] = doc.data();
-    });
+    // Concurrency / Duplicate transition protection using status and round key
+    const transitionKey = `${rawRoom.status}_${rawRoom.round}`;
+    if (lastProcessedTransitionRef.current === transitionKey) {
+      return;
+    }
+    lastProcessedTransitionRef.current = transitionKey;
 
-    if (rawRoom.status === "showing_roles") {
-      const nextEndsAt = Date.now() + 30 * 1000;
-      const updatedPlayers = rawRoom.players.map(p => ({ ...p, isMuted: false }));
-      
-      await updateDoc(roomRef, {
-        status: "night",
-        votes: {},
-        players: updatedPlayers,
-        nightOutcomeText: "",
-        voteOutcomeText: "",
-        mafiaTarget: null,
-        muteTarget: null,
-        doctorTarget: null,
-        sniperTarget: null,
-        phaseEndsAt: nextEndsAt,
-        messages: arrayUnion({
-          id: Math.random().toString(36).substring(2, 9),
-          senderId: null,
-          senderName: "النظام",
-          text: `🌙 حلّ الليل... الجولة ${rawRoom.round}. الجميع يغمض عينيه الآن.`,
-          time: new Date().toTimeString().split(" ")[0].substring(0, 5),
-          isSystem: true,
-          isDeadChat: false,
-        })
-      });
-      
-      triggerHostBotNightActions(rawRoom, privateRoles);
-    } 
-    else if (rawRoom.status === "night") {
-      const { updatedRoom, updatedPrivateRoles } = resolveNightPhase(rawRoom, privateRoles);
-      const winner = checkVictoryConditions(updatedRoom);
-      
-      if (winner) {
-        const playersWithRoles = updatedRoom.players.map(p => ({
-          ...p,
-          role: updatedPrivateRoles[p.id]?.role || "citizen"
-        }));
-
-        await updateDoc(roomRef, {
-          ...updatedRoom,
-          players: playersWithRoles,
-          status: "game_over",
-          winner,
-          phaseEndsAt: 0,
-          messages: arrayUnion({
-            id: Math.random().toString(36).substring(2, 9),
-            senderId: null,
-            senderName: "النظام",
-            text: `🎉 انتهت اللعبة! فاز فريق ${winner === "mafia" ? "المافيا" : "الأهالي"}!`,
-            time: new Date().toTimeString().split(" ")[0].substring(0, 5),
-            isSystem: true,
-            isDeadChat: false,
-          })
-        });
-      } else {
-        const nextEndsAt = Date.now() + rawRoom.dayDuration * 1000;
-        await updateDoc(roomRef, {
-          ...updatedRoom,
-          status: "day",
-          phaseEndsAt: nextEndsAt,
-        });
-
-        triggerHostBotDaySpeech(updatedRoom, updatedPrivateRoles);
-      }
-    } 
-    else if (rawRoom.status === "day") {
-      const nextEndsAt = Date.now() + 20 * 1000;
-      await updateDoc(roomRef, {
-        status: "voting",
-        votes: {},
-        phaseEndsAt: nextEndsAt,
-        messages: arrayUnion({
-          id: Math.random().toString(36).substring(2, 9),
-          senderId: null,
-          senderName: "النظام",
-          text: "⚖️ انتهى النقاش! تبدأ الآن مرحلة التصويت لاختيار الشخص المشتبه به. لديكم 20 ثانية.",
-          time: new Date().toTimeString().split(" ")[0].substring(0, 5),
-          isSystem: true,
-          isDeadChat: false,
-        })
+    try {
+      const roomRef = doc(db, "rooms", roomCode);
+      const privDocs = await getDocs(collection(db, "rooms", roomCode, "playersPrivate"));
+      const privateRoles: Record<string, any> = {};
+      privDocs.forEach((doc) => {
+        privateRoles[doc.id] = doc.data();
       });
 
-      triggerHostBotVoting(rawRoom, privateRoles);
-    } 
-    else if (rawRoom.status === "voting") {
-      const { updatedRoom, updatedPrivateRoles } = resolveVotingPhase(rawRoom, privateRoles);
-      const winner = checkVictoryConditions(updatedRoom);
-      
-      if (winner) {
-        const playersWithRoles = updatedRoom.players.map(p => ({
-          ...p,
-          role: updatedPrivateRoles[p.id]?.role || "citizen"
-        }));
-
-        await updateDoc(roomRef, {
-          ...updatedRoom,
-          players: playersWithRoles,
-          status: "game_over",
-          winner,
-          phaseEndsAt: 0,
-          messages: arrayUnion({
-            id: Math.random().toString(36).substring(2, 9),
-            senderId: null,
-            senderName: "النظام",
-            text: `🎉 انتهت اللعبة! فاز فريق ${winner === "mafia" ? "المافيا" : "الأهالي"}!`,
-            time: new Date().toTimeString().split(" ")[0].substring(0, 5),
-            isSystem: true,
-            isDeadChat: false,
-          })
-        });
-      } else {
+      if (rawRoom.status === "showing_roles") {
         const nextEndsAt = Date.now() + 30 * 1000;
-        const nextRoomState = {
-          ...updatedRoom,
-          round: updatedRoom.round + 1,
-          status: "night" as const,
-          phaseEndsAt: nextEndsAt,
+        const updatedPlayers = rawRoom.players.map(p => ({ ...p, isMuted: false }));
+        
+        await updateDoc(roomRef, {
+          status: "night",
           votes: {},
+          players: updatedPlayers,
+          nightOutcomeText: "",
+          voteOutcomeText: "",
           mafiaTarget: null,
           muteTarget: null,
           doctorTarget: null,
           sniperTarget: null,
-        };
-
-        await updateDoc(roomRef, {
-          ...nextRoomState,
+          phaseEndsAt: nextEndsAt,
           messages: arrayUnion({
             id: Math.random().toString(36).substring(2, 9),
             senderId: null,
             senderName: "النظام",
-            text: `🌙 حلّ الليل... الجولة ${nextRoomState.round}. الجميع يغمض عينيه الآن.`,
+            text: `🌙 حلّ الليل... الجولة ${rawRoom.round}. الجميع يغمض عينيه الآن.`,
+            time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+            isSystem: true,
+            isDeadChat: false,
+          })
+        });
+        
+        triggerHostBotNightActions(rawRoom, privateRoles);
+      } 
+      else if (rawRoom.status === "night") {
+        const { updatedRoom, updatedPrivateRoles } = resolveNightPhase(rawRoom, privateRoles);
+        const winner = checkVictoryConditions(updatedRoom, updatedPrivateRoles);
+        
+        if (winner) {
+          const playersWithRoles = updatedRoom.players.map(p => ({
+            ...p,
+            role: updatedPrivateRoles[p.id]?.role || "citizen"
+          }));
+
+          await updateDoc(roomRef, {
+            ...updatedRoom,
+            players: playersWithRoles,
+            status: "game_over",
+            winner,
+            phaseEndsAt: 0,
+            messages: arrayUnion({
+              id: Math.random().toString(36).substring(2, 9),
+              senderId: null,
+              senderName: "النظام",
+              text: `🎉 انتهت اللعبة! فاز فريق ${winner === "mafia" ? "المافيا" : "الأهالي"}!`,
+              time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+              isSystem: true,
+              isDeadChat: false,
+            })
+          });
+        } else {
+          const nextEndsAt = Date.now() + rawRoom.dayDuration * 1000;
+          await updateDoc(roomRef, {
+            ...updatedRoom,
+            status: "day",
+            phaseEndsAt: nextEndsAt,
+          });
+
+          triggerHostBotDaySpeech(updatedRoom, updatedPrivateRoles);
+        }
+      } 
+      else if (rawRoom.status === "day") {
+        const nextEndsAt = Date.now() + 20 * 1000;
+        await updateDoc(roomRef, {
+          status: "voting",
+          votes: {},
+          phaseEndsAt: nextEndsAt,
+          messages: arrayUnion({
+            id: Math.random().toString(36).substring(2, 9),
+            senderId: null,
+            senderName: "النظام",
+            text: "⚖️ انتهى النقاش! تبدأ الآن مرحلة التصويت لاختيار الشخص المشتبه به. لديكم 20 ثانية.",
             time: new Date().toTimeString().split(" ")[0].substring(0, 5),
             isSystem: true,
             isDeadChat: false,
           })
         });
 
-        triggerHostBotNightActions(nextRoomState, updatedPrivateRoles);
+        triggerHostBotVoting(rawRoom, privateRoles);
+      } 
+      else if (rawRoom.status === "voting") {
+        const { updatedRoom, updatedPrivateRoles } = resolveVotingPhase(rawRoom, privateRoles);
+        const winner = checkVictoryConditions(updatedRoom, updatedPrivateRoles);
+        
+        if (winner) {
+          const playersWithRoles = updatedRoom.players.map(p => ({
+            ...p,
+            role: updatedPrivateRoles[p.id]?.role || "citizen"
+          }));
+
+          await updateDoc(roomRef, {
+            ...updatedRoom,
+            players: playersWithRoles,
+            status: "game_over",
+            winner,
+            phaseEndsAt: 0,
+            messages: arrayUnion({
+              id: Math.random().toString(36).substring(2, 9),
+              senderId: null,
+              senderName: "النظام",
+              text: `🎉 انتهت اللعبة! فاز فريق ${winner === "mafia" ? "المافيا" : "الأهالي"}!`,
+              time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+              isSystem: true,
+              isDeadChat: false,
+            })
+          });
+        } else {
+          const nextEndsAt = Date.now() + 30 * 1000;
+          const nextRoomState = {
+            ...updatedRoom,
+            round: updatedRoom.round + 1,
+            status: "night" as const,
+            phaseEndsAt: nextEndsAt,
+            votes: {},
+            mafiaTarget: null,
+            muteTarget: null,
+            doctorTarget: null,
+            sniperTarget: null,
+          };
+
+          await updateDoc(roomRef, {
+            ...nextRoomState,
+            messages: arrayUnion({
+              id: Math.random().toString(36).substring(2, 9),
+              senderId: null,
+              senderName: "النظام",
+              text: `🌙 حلّ الليل... الجولة ${nextRoomState.round}. الجميع يغمض عينيه الآن.`,
+              time: new Date().toTimeString().split(" ")[0].substring(0, 5),
+              isSystem: true,
+              isDeadChat: false,
+            })
+          });
+
+          triggerHostBotNightActions(nextRoomState, updatedPrivateRoles);
+        }
       }
+    } catch (error) {
+      console.error("handlePhaseTimeout error:", error);
     }
   };
 
@@ -2229,20 +2240,26 @@ export default function App() {
                         <div className="bg-stone-950 border border-stone-900/60 p-2 rounded-xl">
                           <span className="text-[9px] text-emerald-400 font-black block mb-1.5 text-right">اختر لحمايته الليلة:</span>
                           <div className="flex flex-col gap-1 max-h-[85px] overflow-y-auto">
-                            {room.players.filter(p => p.isAlive).map(p => (
-                              <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => submitNightAction("protect", room.doctorTarget === p.id ? null : p.id)}
-                                className={`w-full text-right px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
-                                  room.doctorTarget === p.id
-                                    ? "bg-emerald-950 border-emerald-600/60 text-emerald-200 font-black"
-                                    : "bg-stone-900 border-stone-850 text-stone-400 hover:text-white"
-                                }`}
-                              >
-                                🛡️ {p.nickname} {p.id === playerId && "(أنت)"}
-                              </button>
-                            ))}
+                            {room.players.filter(p => p.isAlive).map(p => {
+                              const isPrevTarget = p.id === room.prevDoctorTarget;
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  disabled={isPrevTarget}
+                                  onClick={() => submitNightAction("protect", room.doctorTarget === p.id ? null : p.id)}
+                                  className={`w-full text-right px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all ${
+                                    isPrevTarget
+                                      ? "bg-stone-950 border-stone-900 text-stone-600 cursor-not-allowed opacity-50"
+                                      : room.doctorTarget === p.id
+                                      ? "bg-emerald-950 border-emerald-600/60 text-emerald-200 font-black cursor-pointer"
+                                      : "bg-stone-900 border-stone-850 text-stone-400 hover:text-white cursor-pointer"
+                                  }`}
+                                >
+                                  🛡️ {p.nickname} {p.id === playerId && "(أنت)"} {isPrevTarget && " (محمي الليلة السابقة)"}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       )}

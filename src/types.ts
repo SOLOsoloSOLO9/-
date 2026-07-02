@@ -51,6 +51,7 @@ export interface Room {
   mafiaTarget: string | null;
   muteTarget: string | null;
   doctorTarget: string | null;
+  prevDoctorTarget?: string | null;
   sniperTarget: string | null;
   sniperHasShot?: boolean;
   jokerChoice: "first_night_death" | "first_vote_elimination" | null;
