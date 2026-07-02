@@ -26,6 +26,13 @@ allprojects {
         resolutionStrategy {
             force 'androidx.core:core:1.15.0'
             force 'androidx.core:core-ktx:1.15.0'
+            force 'androidx.activity:activity:1.9.3'
+            force 'androidx.activity:activity-ktx:1.9.3'
+            force 'androidx.fragment:fragment:1.8.5'
+            force 'androidx.fragment:fragment-ktx:1.8.5'
+            force 'androidx.webkit:webkit:1.12.1'
+            force 'androidx.appcompat:appcompat:1.7.0'
+            force 'androidx.appcompat:appcompat-resources:1.7.0'
         }
     }
 }
